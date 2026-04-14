@@ -24,10 +24,13 @@ import pytest
 
 from faucet import (
     CHAINS,
+    USDC_CHAINS,
+    USDC_CONTRACTS,
     FaucetError,
     InsufficientFaucetBalanceError,
     RateLimitError,
     drip,
+    drip_usdc,
 )
 
 _MIN_BALANCE = 10**16  # 0.01 ETH
@@ -63,6 +66,41 @@ class TestFaucetConfig:
         with pytest.raises(ValueError, match="Unknown chain"):
             asyncio.run(
                 drip("0x0000000000000000000000000000000000000001", "unknown-chain")
+            )
+
+    def test_usdc_chains_includes_key_chains(self):
+        for chain in (
+            "ethereum-sepolia",
+            "arbitrum-sepolia",
+            "base-sepolia",
+            "optimism-sepolia",
+            "polygon-amoy",
+            "avalanche-fuji",
+            "linea-sepolia",
+            "zksync-sepolia",
+            "unichain-sepolia",
+            "solana-devnet",
+        ):
+            assert chain in USDC_CHAINS, f"{chain!r} missing from USDC_CHAINS"
+
+    def test_drip_usdc_raises_on_unknown_chain(self):
+        import asyncio
+
+        with pytest.raises(ValueError, match="unknown chain"):
+            asyncio.run(
+                drip_usdc("0x0000000000000000000000000000000000000001", "unknown-chain")
+            )
+
+    def test_drip_usdc_raises_on_unknown_token(self):
+        import asyncio
+
+        with pytest.raises(ValueError, match="unsupported token"):
+            asyncio.run(
+                drip_usdc(
+                    "0x0000000000000000000000000000000000000001",
+                    "base-sepolia",
+                    token="DAI",
+                )
             )
 
 
@@ -134,4 +172,50 @@ class TestFaucetZkSyncSepolia:
         )
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on zkSync Sepolia, got {balance / 10**18:.6f} ETH"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Circle USDC faucet testnet tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.testnet
+class TestCircleFaucet:
+    """Testnet tests for the Circle USDC faucet — skipped unless TESTNET_PRIVATE_KEY is set."""
+
+    async def test_drip_usdc(self, testnet_address, usdc_chain_w3):
+        """Circle faucet drips 20 USDC — runs once per supported EVM chain."""
+        from faucet import is_chain_synced, is_contract_deployed
+        from web3 import AsyncWeb3
+
+        chain, w3 = usdc_chain_w3
+        usdc_address = USDC_CONTRACTS[chain]
+
+        if not await is_chain_synced(w3):
+            pytest.skip(f"{chain} RPC is still syncing")
+        if not await is_contract_deployed(w3, usdc_address):
+            pytest.skip(f"USDC contract not deployed at {usdc_address} on {chain}")
+
+        abi = [
+            {
+                "inputs": [{"name": "account", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function",
+            }
+        ]
+
+        checksum = AsyncWeb3.to_checksum_address(testnet_address)
+        usdc = w3.eth.contract(
+            address=AsyncWeb3.to_checksum_address(usdc_address), abi=abi
+        )
+        balance_before = await usdc.functions.balanceOf(checksum).call()
+
+        await drip_usdc(testnet_address, chain)
+
+        balance_after = await usdc.functions.balanceOf(checksum).call()
+        assert balance_after >= balance_before, (
+            f"USDC balance did not increase after drip on {chain}"
         )

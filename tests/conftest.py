@@ -6,12 +6,15 @@ and verify the wallet balance on-chain.
 
 Configure via environment variables::
 
-    TESTNET_PRIVATE_KEY    — hex private key of the test wallet (required)
-    CHAINSTACK_API_KEY     — Chainstack API key for fast REST-API drips (optional)
-    SEPOLIA_RPC_URL        — Sepolia JSON-RPC URL (default: https://rpc.sepolia.org)
-    OP_SEPOLIA_RPC_URL     — OP Sepolia RPC URL (default: https://sepolia.optimism.io)
-    BASE_SEPOLIA_RPC_URL   — Base Sepolia RPC URL (default: https://sepolia.base.org)
-    ZKSYNC_SEPOLIA_RPC_URL — zkSync Sepolia RPC URL (default: https://sepolia.era.zksync.dev)
+    TESTNET_PRIVATE_KEY       — hex private key of the test wallet (required)
+    CHAINSTACK_API_KEY        — Chainstack API key for fast REST-API drips (optional)
+    SEPOLIA_RPC_URL           — Sepolia JSON-RPC URL       (default: https://rpc.sepolia.org)
+    OP_SEPOLIA_RPC_URL        — OP Sepolia RPC URL         (default: https://sepolia.optimism.io)
+    BASE_SEPOLIA_RPC_URL      — Base Sepolia RPC URL       (default: https://sepolia.base.org)
+    ZKSYNC_SEPOLIA_RPC_URL    — zkSync Sepolia RPC URL     (default: https://sepolia.era.zksync.dev)
+    ARBITRUM_SEPOLIA_RPC_URL  — Arbitrum Sepolia RPC URL   (default: https://sepolia-rollup.arbitrum.io/rpc)
+    POLYGON_AMOY_RPC_URL      — Polygon Amoy RPC URL       (default: https://rpc-amoy.polygon.technology)
+    AVALANCHE_FUJI_RPC_URL    — Avalanche Fuji RPC URL     (default: https://avalanche-fuji-c-chain-rpc.publicnode.com)
 
 Run testnet tests with::
 
@@ -36,7 +39,27 @@ BASE_SEPOLIA_RPC_URL = os.environ.get(
 ZKSYNC_SEPOLIA_RPC_URL = os.environ.get(
     "ZKSYNC_SEPOLIA_RPC_URL", "https://sepolia.era.zksync.dev"
 )
+ARBITRUM_SEPOLIA_RPC_URL = os.environ.get(
+    "ARBITRUM_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc"
+)
+POLYGON_AMOY_RPC_URL = os.environ.get(
+    "POLYGON_AMOY_RPC_URL", "https://rpc-amoy.polygon.technology"
+)
+AVALANCHE_FUJI_RPC_URL = os.environ.get(
+    "AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com"
+)
 TESTNET_PRIVATE_KEY = os.environ.get("TESTNET_PRIVATE_KEY", "")
+
+# EVM chains that have a known USDC contract — used by the parametrized USDC test.
+# Maps chain slug → public RPC URL.
+_USDC_EVM_CHAINS: dict[str, str] = {
+    "ethereum-sepolia": SEPOLIA_RPC_URL,
+    "arbitrum-sepolia": ARBITRUM_SEPOLIA_RPC_URL,
+    "base-sepolia": BASE_SEPOLIA_RPC_URL,
+    "optimism-sepolia": OP_SEPOLIA_RPC_URL,
+    "polygon-amoy": POLYGON_AMOY_RPC_URL,
+    "avalanche-fuji": AVALANCHE_FUJI_RPC_URL,
+}
 
 _MIN_BALANCE = 10**16  # 0.01 ETH
 
@@ -63,6 +86,35 @@ def base_sepolia_w3() -> AsyncWeb3:
 def zksync_sepolia_w3() -> AsyncWeb3:
     """AsyncWeb3 connected to zkSync Sepolia."""
     return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(ZKSYNC_SEPOLIA_RPC_URL))
+
+
+@pytest.fixture
+def arbitrum_sepolia_w3() -> AsyncWeb3:
+    """AsyncWeb3 connected to Arbitrum Sepolia."""
+    return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(ARBITRUM_SEPOLIA_RPC_URL))
+
+
+@pytest.fixture
+def polygon_amoy_w3() -> AsyncWeb3:
+    """AsyncWeb3 connected to Polygon Amoy."""
+    return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(POLYGON_AMOY_RPC_URL))
+
+
+@pytest.fixture
+def avalanche_fuji_w3() -> AsyncWeb3:
+    """AsyncWeb3 connected to Avalanche Fuji."""
+    return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(AVALANCHE_FUJI_RPC_URL))
+
+
+@pytest.fixture(
+    params=list(_USDC_EVM_CHAINS.keys()),
+    ids=list(_USDC_EVM_CHAINS.keys()),
+)
+def usdc_chain_w3(request: pytest.FixtureRequest):
+    """Parametrized fixture — yields (chain_slug, AsyncWeb3) for every EVM chain
+    that has a known USDC contract in :data:`faucet.USDC_CONTRACTS`."""
+    chain: str = request.param
+    return chain, AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(_USDC_EVM_CHAINS[chain]))
 
 
 async def _ensure_funded(w3: AsyncWeb3, address: str, chain_slug: str) -> None:
@@ -143,3 +195,13 @@ async def funded_zksync_sepolia_account(zksync_sepolia_w3):
     account = Account.from_key(TESTNET_PRIVATE_KEY)
     await _ensure_funded(zksync_sepolia_w3, account.address, "zksync-sepolia")
     return account
+
+
+@pytest.fixture
+def testnet_address() -> str:
+    """Return the wallet address derived from TESTNET_PRIVATE_KEY (no funding)."""
+    from eth_account import Account
+
+    if not TESTNET_PRIVATE_KEY:
+        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
+    return Account.from_key(TESTNET_PRIVATE_KEY).address
