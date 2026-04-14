@@ -1,0 +1,35 @@
+[project]
+name = "faucet"
+version = "0.1.0"
+description = "Alchemy testnet faucet automation for all supported chains"
+requires-python = ">=3.12"
+dependencies = [
+    "nodriver>=0.48",
+    "aiohttp>=3.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "eth-account>=0.11.0",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "python-dotenv>=1.0.0",
+    "ruff>=0.15.10",
+    "web3>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "live: marks tests as live integration tests (run with '-m live')",
+    "testnet: marks tests that run against a real testnet and call the faucet (run with '-m testnet')",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["faucet*"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
