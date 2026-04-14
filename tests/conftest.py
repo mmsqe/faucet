@@ -6,10 +6,11 @@ and verify the wallet balance on-chain.
 
 Configure via environment variables::
 
-    TESTNET_PRIVATE_KEY — hex private key of the test wallet (required)
-    SEPOLIA_RPC_URL     — Sepolia JSON-RPC URL (default: https://rpc.sepolia.org)
-    OP_SEPOLIA_RPC_URL  — OP Sepolia RPC URL (default: https://sepolia.optimism.io)
-    BASE_SEPOLIA_RPC_URL  — Base Sepolia RPC URL (default: https://sepolia.base.org)
+    TESTNET_PRIVATE_KEY    — hex private key of the test wallet (required)
+    CHAINSTACK_API_KEY     — Chainstack API key for fast REST-API drips (optional)
+    SEPOLIA_RPC_URL        — Sepolia JSON-RPC URL (default: https://rpc.sepolia.org)
+    OP_SEPOLIA_RPC_URL     — OP Sepolia RPC URL (default: https://sepolia.optimism.io)
+    BASE_SEPOLIA_RPC_URL   — Base Sepolia RPC URL (default: https://sepolia.base.org)
     ZKSYNC_SEPOLIA_RPC_URL — zkSync Sepolia RPC URL (default: https://sepolia.era.zksync.dev)
 
 Run testnet tests with::

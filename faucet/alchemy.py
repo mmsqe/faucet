@@ -67,6 +67,10 @@ class RateLimitError(FaucetError):
         self.reset_at = reset_at
 
 
+class InsufficientFaucetBalanceError(FaucetError):
+    """Raised when the faucet itself has run dry (HTTP 503)."""
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -119,6 +123,10 @@ async def drip(
     if isinstance(data, dict) and "error" in data:
         if resp.status == 429:
             raise RateLimitError(data["error"], reset_at=data.get("resetAt"))
+        if resp.status == 503:
+            raise InsufficientFaucetBalanceError(
+                f"Alchemy faucet error (503): {data['error']}"
+            )
         raise FaucetError(f"Alchemy faucet error ({resp.status}): {data['error']}")
 
     if isinstance(data, dict):
