@@ -15,6 +15,7 @@ Configure via environment variables::
     ARBITRUM_SEPOLIA_RPC_URL  — Arbitrum Sepolia RPC URL   (default: https://sepolia-rollup.arbitrum.io/rpc)
     POLYGON_AMOY_RPC_URL      — Polygon Amoy RPC URL       (default: https://rpc-amoy.polygon.technology)
     AVALANCHE_FUJI_RPC_URL    — Avalanche Fuji RPC URL     (default: https://avalanche-fuji-c-chain-rpc.publicnode.com)
+    HL_TESTNET_RPC_URL        — Hyperliquid testnet RPC URL (default: https://rpc.hyperliquid-testnet.xyz/evm)
 
 Run testnet tests with::
 
@@ -47,6 +48,9 @@ POLYGON_AMOY_RPC_URL = os.environ.get(
 )
 AVALANCHE_FUJI_RPC_URL = os.environ.get(
     "AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com"
+)
+HL_TESTNET_RPC_URL = os.environ.get(
+    "HL_TESTNET_RPC_URL", "https://rpc.hyperliquid-testnet.xyz/evm"
 )
 TESTNET_PRIVATE_KEY = os.environ.get("TESTNET_PRIVATE_KEY", "")
 
@@ -104,6 +108,12 @@ def polygon_amoy_w3() -> AsyncWeb3:
 def avalanche_fuji_w3() -> AsyncWeb3:
     """AsyncWeb3 connected to Avalanche Fuji."""
     return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(AVALANCHE_FUJI_RPC_URL))
+
+
+@pytest.fixture
+def hyperliquid_testnet_w3() -> AsyncWeb3:
+    """AsyncWeb3 connected to Hyperliquid testnet."""
+    return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(HL_TESTNET_RPC_URL))
 
 
 @pytest.fixture(
@@ -194,6 +204,18 @@ async def funded_zksync_sepolia_account(zksync_sepolia_w3):
         pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
     account = Account.from_key(TESTNET_PRIVATE_KEY)
     await _ensure_funded(zksync_sepolia_w3, account.address, "zksync-sepolia")
+    return account
+
+
+@pytest.fixture
+async def funded_hyperliquid_testnet_account(hyperliquid_testnet_w3):
+    """eth_account LocalAccount funded with Hyperliquid testnet ETH."""
+    from eth_account import Account
+
+    if not TESTNET_PRIVATE_KEY:
+        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
+    account = Account.from_key(TESTNET_PRIVATE_KEY)
+    await _ensure_funded(hyperliquid_testnet_w3, account.address, "hyperliquid-testnet")
     return account
 
 

@@ -68,6 +68,11 @@ class TestFaucetConfig:
                 drip("0x0000000000000000000000000000000000000001", "unknown-chain")
             )
 
+    def test_chainstack_chains_includes_hyperliquid_testnet(self):
+        from faucet import chainstack
+
+        assert "hyperliquid-testnet" in chainstack.CHAINS
+
     def test_usdc_chains_includes_key_chains(self):
         for chain in (
             "ethereum-sepolia",
@@ -172,6 +177,22 @@ class TestFaucetZkSyncSepolia:
         )
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on zkSync Sepolia, got {balance / 10**18:.6f} ETH"
+        )
+
+
+@pytest.mark.testnet
+class TestFaucetHyperliquidTestnet:
+    """Testnet tests for Hyperliquid testnet — skipped unless TESTNET_PRIVATE_KEY is set."""
+
+    async def test_funded_account_has_balance(
+        self, funded_hyperliquid_testnet_account, hyperliquid_testnet_w3
+    ):
+        """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on Hyperliquid testnet."""
+        balance = await hyperliquid_testnet_w3.eth.get_balance(
+            funded_hyperliquid_testnet_account.address
+        )
+        assert balance >= _MIN_BALANCE, (
+            f"Expected ≥ 0.01 ETH on Hyperliquid testnet, got {balance / 10**18:.6f} ETH"
         )
 
 

@@ -42,6 +42,7 @@ _API_CHAIN_IDS: dict[str, str] = {
     "optimism-sepolia": "optimism-sepolia-testnet",
     "arbitrum-sepolia": "arbitrum-sepolia-testnet",
     "polygon-amoy": "amoy",
+    "hyperliquid-testnet": "hyperliquid-testnet",
 }
 
 # Maps our slug → text fragment that identifies the network in the SPA grid.
@@ -53,6 +54,7 @@ _NETWORK_TEXT: dict[str, str] = {
     "optimism-sepolia": "Optimism Sepolia",
     "arbitrum-sepolia": "Arbitrum Sepolia",
     "polygon-amoy": "Amoy",
+    "hyperliquid-testnet": "Hyperliquid",
 }
 
 #: Public set of chain slugs supported by this module.

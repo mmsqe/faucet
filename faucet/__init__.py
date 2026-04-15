@@ -54,6 +54,9 @@ _CHAINSTACK_FALLBACK: dict[str, str] = {
     "polygon-amoy": "polygon-amoy",
 }
 
+# Chains only available on Chainstack (not on Alchemy).
+_CHAINSTACK_ONLY: set[str] = _chainstack.CHAINS - CHAINS.keys()
+
 
 async def drip(
     address: str,
@@ -68,10 +71,13 @@ async def drip(
     Chainstack fallback exists for the chain, the request is retried against
     Chainstack automatically.
 
+    Chains only available on Chainstack (e.g. ``"hyperliquid-testnet"``) are
+    routed directly to Chainstack without attempting Alchemy first.
+
     Args:
         address: Wallet address to fund.
-        chain: Alchemy chain slug, e.g. ``"optimism-sepolia"``.
-            Must be a key in :data:`CHAINS`.
+        chain: Chain slug, e.g. ``"optimism-sepolia"`` or ``"hyperliquid-testnet"``.
+            Must be a key in :data:`CHAINS` or a Chainstack-only chain.
         headless: Run Chrome in headless mode (default: ``False``).
         timeout: Seconds to wait for Turnstile to solve (default: 30).
 
@@ -79,10 +85,14 @@ async def drip(
         Transaction hash string, or ``None`` if the API did not return one.
 
     Raises:
-        ValueError: *chain* is not in :data:`CHAINS`.
+        ValueError: *chain* is not supported by any provider.
         RateLimitError: Daily limit hit on all attempted providers.
         FaucetError: All providers failed or Turnstile timed out.
     """
+    if chain in _CHAINSTACK_ONLY:
+        return await _chainstack.drip(
+            address, chain, headless=headless, timeout=timeout
+        )
     try:
         return await _alchemy_drip(address, chain, headless=headless, timeout=timeout)
     except InsufficientFaucetBalanceError:
