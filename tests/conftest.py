@@ -6,16 +6,9 @@ and verify the wallet balance on-chain.
 
 Configure via environment variables::
 
-    TESTNET_PRIVATE_KEY       — hex private key of the test wallet (required)
-    CHAINSTACK_API_KEY        — Chainstack API key for fast REST-API drips (optional)
-    SEPOLIA_RPC_URL           — Sepolia JSON-RPC URL       (default: https://rpc.sepolia.org)
-    OP_SEPOLIA_RPC_URL        — OP Sepolia RPC URL         (default: https://sepolia.optimism.io)
-    BASE_SEPOLIA_RPC_URL      — Base Sepolia RPC URL       (default: https://sepolia.base.org)
-    ZKSYNC_SEPOLIA_RPC_URL    — zkSync Sepolia RPC URL     (default: https://sepolia.era.zksync.dev)
-    ARBITRUM_SEPOLIA_RPC_URL  — Arbitrum Sepolia RPC URL   (default: https://sepolia-rollup.arbitrum.io/rpc)
-    POLYGON_AMOY_RPC_URL      — Polygon Amoy RPC URL       (default: https://rpc-amoy.polygon.technology)
-    AVALANCHE_FUJI_RPC_URL    — Avalanche Fuji RPC URL     (default: https://avalanche-fuji-c-chain-rpc.publicnode.com)
-    HL_TESTNET_RPC_URL        — Hyperliquid testnet RPC URL (default: https://rpc.hyperliquid-testnet.xyz/evm)
+    TESTNET_ADDRESS   — wallet address to fund (required)
+    CHAINSTACK_API_KEY — Chainstack API key for fast REST-API drips (optional)
+    INFURA_KEY        — Infura project key; if set, all RPC URLs use Infura
 
 Run testnet tests with::
 
@@ -31,28 +24,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_INFURA_KEY = os.environ.get("INFURA_KEY", "")
 
-SEPOLIA_RPC_URL = os.environ.get("SEPOLIA_RPC_URL", "https://rpc.sepolia.org")
-OP_SEPOLIA_RPC_URL = os.environ.get("OP_SEPOLIA_RPC_URL", "https://sepolia.optimism.io")
-BASE_SEPOLIA_RPC_URL = os.environ.get(
-    "BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org"
-)
-ZKSYNC_SEPOLIA_RPC_URL = os.environ.get(
-    "ZKSYNC_SEPOLIA_RPC_URL", "https://sepolia.era.zksync.dev"
-)
-ARBITRUM_SEPOLIA_RPC_URL = os.environ.get(
-    "ARBITRUM_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc"
-)
-POLYGON_AMOY_RPC_URL = os.environ.get(
-    "POLYGON_AMOY_RPC_URL", "https://rpc-amoy.polygon.technology"
-)
-AVALANCHE_FUJI_RPC_URL = os.environ.get(
-    "AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com"
-)
-HL_TESTNET_RPC_URL = os.environ.get(
-    "HL_TESTNET_RPC_URL", "https://rpc.hyperliquid-testnet.xyz/evm"
-)
-TESTNET_PRIVATE_KEY = os.environ.get("TESTNET_PRIVATE_KEY", "")
+
+def _rpc(infura_network: str, fallback: str) -> str:
+    if _INFURA_KEY:
+        return f"https://{infura_network}.infura.io/v3/{_INFURA_KEY}"
+    return fallback
+
+
+SEPOLIA_RPC_URL = _rpc("sepolia", "https://rpc.sepolia.org")
+OP_SEPOLIA_RPC_URL = _rpc("optimism-sepolia", "https://sepolia.optimism.io")
+BASE_SEPOLIA_RPC_URL = _rpc("base-sepolia", "https://sepolia.base.org")
+ZKSYNC_SEPOLIA_RPC_URL = _rpc("zksync-sepolia", "https://sepolia.era.zksync.dev")
+ARBITRUM_SEPOLIA_RPC_URL = os.environ.get("ARBITRUM_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc")
+POLYGON_AMOY_RPC_URL = os.environ.get("POLYGON_AMOY_RPC_URL", "https://rpc-amoy.polygon.technology")
+AVALANCHE_FUJI_RPC_URL = os.environ.get("AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com")
+HL_TESTNET_RPC_URL = os.environ.get("HL_TESTNET_RPC_URL", "https://rpc.hyperliquid-testnet.xyz/evm")
+TESTNET_ADDRESS = os.environ.get("TESTNET_ADDRESS", "")
 
 # EVM chains that have a known USDC contract — used by the parametrized USDC test.
 # Maps chain slug → public RPC URL.
@@ -128,17 +117,14 @@ def usdc_chain_w3(request: pytest.FixtureRequest):
 
 
 async def _ensure_funded(w3: AsyncWeb3, address: str, chain_slug: str) -> None:
-    """Drip *address* on *chain_slug* if balance is below 0.01 ETH.
+    """Always attempt to drip *address* on *chain_slug*.
 
-    Skips the test when the faucet is rate-limited and the wallet has
+    Skips the test only when the faucet fails AND the wallet has
     insufficient balance.
     """
     from faucet import drip
 
     checksum = AsyncWeb3.to_checksum_address(address)
-    balance = await w3.eth.get_balance(checksum)
-    if balance >= _MIN_BALANCE:
-        return
 
     try:
         await drip(address, chain_slug)
@@ -160,70 +146,43 @@ async def _ensure_funded(w3: AsyncWeb3, address: str, chain_slug: str) -> None:
 
 
 @pytest.fixture
-async def funded_sepolia_account(sepolia_w3):
-    """eth_account LocalAccount funded with Sepolia ETH."""
-    from eth_account import Account
-
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    account = Account.from_key(TESTNET_PRIVATE_KEY)
-    await _ensure_funded(sepolia_w3, account.address, "ethereum-sepolia")
-    return account
-
-
-@pytest.fixture
-async def funded_op_sepolia_account(op_sepolia_w3):
-    """eth_account LocalAccount funded with OP Sepolia ETH."""
-    from eth_account import Account
-
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    account = Account.from_key(TESTNET_PRIVATE_KEY)
-    await _ensure_funded(op_sepolia_w3, account.address, "optimism-sepolia")
-    return account
-
-
-@pytest.fixture
-async def funded_base_sepolia_account(base_sepolia_w3):
-    """eth_account LocalAccount funded with Base Sepolia ETH."""
-    from eth_account import Account
-
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    account = Account.from_key(TESTNET_PRIVATE_KEY)
-    await _ensure_funded(base_sepolia_w3, account.address, "base-sepolia")
-    return account
-
-
-@pytest.fixture
-async def funded_zksync_sepolia_account(zksync_sepolia_w3):
-    """eth_account LocalAccount funded with zkSync Sepolia ETH."""
-    from eth_account import Account
-
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    account = Account.from_key(TESTNET_PRIVATE_KEY)
-    await _ensure_funded(zksync_sepolia_w3, account.address, "zksync-sepolia")
-    return account
-
-
-@pytest.fixture
-async def funded_hyperliquid_testnet_account(hyperliquid_testnet_w3):
-    """eth_account LocalAccount funded with Hyperliquid testnet ETH."""
-    from eth_account import Account
-
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    account = Account.from_key(TESTNET_PRIVATE_KEY)
-    await _ensure_funded(hyperliquid_testnet_w3, account.address, "hyperliquid-testnet")
-    return account
-
-
-@pytest.fixture
 def testnet_address() -> str:
-    """Return the wallet address derived from TESTNET_PRIVATE_KEY (no funding)."""
-    from eth_account import Account
+    """Return the testnet wallet address, skipping if not configured."""
+    if not TESTNET_ADDRESS:
+        pytest.skip("TESTNET_ADDRESS not set")
+    return TESTNET_ADDRESS
 
-    if not TESTNET_PRIVATE_KEY:
-        pytest.skip("TESTNET_PRIVATE_KEY not set — cannot derive testnet wallet")
-    return Account.from_key(TESTNET_PRIVATE_KEY).address
+
+@pytest.fixture
+async def funded_sepolia_account(testnet_address, sepolia_w3):
+    """Wallet address funded with Sepolia ETH."""
+    await _ensure_funded(sepolia_w3, testnet_address, "ethereum-sepolia")
+    return testnet_address
+
+
+@pytest.fixture
+async def funded_op_sepolia_account(testnet_address, op_sepolia_w3):
+    """Wallet address funded with OP Sepolia ETH."""
+    await _ensure_funded(op_sepolia_w3, testnet_address, "optimism-sepolia")
+    return testnet_address
+
+
+@pytest.fixture
+async def funded_base_sepolia_account(testnet_address, base_sepolia_w3):
+    """Wallet address funded with Base Sepolia ETH."""
+    await _ensure_funded(base_sepolia_w3, testnet_address, "base-sepolia")
+    return testnet_address
+
+
+@pytest.fixture
+async def funded_zksync_sepolia_account(testnet_address, zksync_sepolia_w3):
+    """Wallet address funded with zkSync Sepolia ETH."""
+    await _ensure_funded(zksync_sepolia_w3, testnet_address, "zksync-sepolia")
+    return testnet_address
+
+
+@pytest.fixture
+async def funded_hyperliquid_testnet_account(testnet_address, hyperliquid_testnet_w3):
+    """Wallet address funded with Hyperliquid testnet ETH."""
+    await _ensure_funded(hyperliquid_testnet_w3, testnet_address, "hyperliquid-testnet")
+    return testnet_address

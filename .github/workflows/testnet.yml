@@ -10,12 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: testnet
     env:
-      TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY }}
+      TESTNET_ADDRESS: ${{ secrets.TESTNET_ADDRESS }}
       CHAINSTACK_API_KEY: ${{ secrets.CHAINSTACK_API_KEY }}
-      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
-      OP_SEPOLIA_RPC_URL: ${{ secrets.OP_SEPOLIA_RPC_URL }}
-      BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
-      ZKSYNC_SEPOLIA_RPC_URL: ${{ secrets.ZKSYNC_SEPOLIA_RPC_URL }}
+      INFURA_KEY: ${{ secrets.INFURA_KEY }}
 
     steps:
       - uses: actions/checkout@v4

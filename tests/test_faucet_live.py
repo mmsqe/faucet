@@ -9,7 +9,7 @@ Test categories
     Calls the Alchemy faucet via ``nodriver`` (opens a Chrome window briefly
     to solve Cloudflare Turnstile) and verifies the wallet balance.  Requires:
 
-    - ``TESTNET_PRIVATE_KEY`` — hex private key of the wallet to fund.
+    - ``TESTNET_ADDRESS`` — wallet address to fund.
     - ``SEPOLIA_RPC_URL`` / ``OP_SEPOLIA_RPC_URL`` / ``BASE_SEPOLIA_RPC_URL`` (optional).
 
 Run with::
@@ -110,18 +110,18 @@ class TestFaucetConfig:
 
 
 # ---------------------------------------------------------------------------
-# Testnet tests — require TESTNET_PRIVATE_KEY and a real funded wallet
+# Testnet tests — require TESTNET_ADDRESS and a real funded wallet
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.testnet
 class TestFaucetSepolia:
-    """Testnet tests for Sepolia — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for Sepolia — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_funded_account_has_balance(self, funded_sepolia_account, sepolia_w3):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH."""
-        balance = await sepolia_w3.eth.get_balance(funded_sepolia_account.address)
-        print(f"\n[Sepolia] address={funded_sepolia_account.address} balance={balance / 10**18:.6f} ETH")
+        balance = await sepolia_w3.eth.get_balance(funded_sepolia_account)
+        print(f"\n[Sepolia] address={funded_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -130,21 +130,21 @@ class TestFaucetSepolia:
         self, funded_sepolia_account, sepolia_w3
     ):
         """drip() is not called when the balance already meets the threshold."""
-        balance = await sepolia_w3.eth.get_balance(funded_sepolia_account.address)
+        balance = await sepolia_w3.eth.get_balance(funded_sepolia_account)
         # If we reach here the fixture already ensured the balance is sufficient.
         assert balance >= _MIN_BALANCE
 
 
 @pytest.mark.testnet
 class TestFaucetOpSepolia:
-    """Testnet tests for OP Sepolia — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for OP Sepolia — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_funded_account_has_balance(
         self, funded_op_sepolia_account, op_sepolia_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on OP Sepolia."""
-        balance = await op_sepolia_w3.eth.get_balance(funded_op_sepolia_account.address)
-        print(f"\n[OP Sepolia] address={funded_op_sepolia_account.address} balance={balance / 10**18:.6f} ETH")
+        balance = await op_sepolia_w3.eth.get_balance(funded_op_sepolia_account)
+        print(f"\n[OP Sepolia] address={funded_op_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on OP Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -152,16 +152,16 @@ class TestFaucetOpSepolia:
 
 @pytest.mark.testnet
 class TestFaucetBaseSepolia:
-    """Testnet tests for Base Sepolia — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for Base Sepolia — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_funded_account_has_balance(
         self, funded_base_sepolia_account, base_sepolia_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on Base Sepolia."""
         balance = await base_sepolia_w3.eth.get_balance(
-            funded_base_sepolia_account.address
+            funded_base_sepolia_account
         )
-        print(f"\n[Base Sepolia] address={funded_base_sepolia_account.address} balance={balance / 10**18:.6f} ETH")
+        print(f"\n[Base Sepolia] address={funded_base_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Base Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -169,16 +169,16 @@ class TestFaucetBaseSepolia:
 
 @pytest.mark.testnet
 class TestFaucetZkSyncSepolia:
-    """Testnet tests for zkSync Sepolia — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for zkSync Sepolia — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_funded_account_has_balance(
         self, funded_zksync_sepolia_account, zksync_sepolia_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on zkSync Sepolia."""
         balance = await zksync_sepolia_w3.eth.get_balance(
-            funded_zksync_sepolia_account.address
+            funded_zksync_sepolia_account
         )
-        print(f"\n[zkSync Sepolia] address={funded_zksync_sepolia_account.address} balance={balance / 10**18:.6f} ETH")
+        print(f"\n[zkSync Sepolia] address={funded_zksync_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on zkSync Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -186,16 +186,16 @@ class TestFaucetZkSyncSepolia:
 
 @pytest.mark.testnet
 class TestFaucetHyperliquidTestnet:
-    """Testnet tests for Hyperliquid testnet — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for Hyperliquid testnet — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_funded_account_has_balance(
         self, funded_hyperliquid_testnet_account, hyperliquid_testnet_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on Hyperliquid testnet."""
         balance = await hyperliquid_testnet_w3.eth.get_balance(
-            funded_hyperliquid_testnet_account.address
+            funded_hyperliquid_testnet_account
         )
-        print(f"\n[Hyperliquid Testnet] address={funded_hyperliquid_testnet_account.address} balance={balance / 10**18:.6f} ETH")
+        print(f"\n[Hyperliquid Testnet] address={funded_hyperliquid_testnet_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Hyperliquid testnet, got {balance / 10**18:.6f} ETH"
         )
@@ -208,7 +208,7 @@ class TestFaucetHyperliquidTestnet:
 
 @pytest.mark.testnet
 class TestCircleFaucet:
-    """Testnet tests for the Circle USDC faucet — skipped unless TESTNET_PRIVATE_KEY is set."""
+    """Testnet tests for the Circle USDC faucet — skipped unless TESTNET_ADDRESS is set."""
 
     async def test_drip_usdc(self, testnet_address, usdc_chain_w3):
         """Circle faucet drips 20 USDC — runs once per supported EVM chain."""
