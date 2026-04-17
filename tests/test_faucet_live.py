@@ -121,7 +121,9 @@ class TestFaucetSepolia:
     async def test_funded_account_has_balance(self, funded_sepolia_account, sepolia_w3):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH."""
         balance = await sepolia_w3.eth.get_balance(funded_sepolia_account)
-        print(f"\n[Sepolia] address={funded_sepolia_account} balance={balance / 10**18:.6f} ETH")
+        print(
+            f"\n[Sepolia] address={funded_sepolia_account} balance={balance / 10**18:.6f} ETH"
+        )
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -144,7 +146,9 @@ class TestFaucetOpSepolia:
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on OP Sepolia."""
         balance = await op_sepolia_w3.eth.get_balance(funded_op_sepolia_account)
-        print(f"\n[OP Sepolia] address={funded_op_sepolia_account} balance={balance / 10**18:.6f} ETH")
+        print(
+            f"\n[OP Sepolia] address={funded_op_sepolia_account} balance={balance / 10**18:.6f} ETH"
+        )
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on OP Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -158,10 +162,10 @@ class TestFaucetBaseSepolia:
         self, funded_base_sepolia_account, base_sepolia_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on Base Sepolia."""
-        balance = await base_sepolia_w3.eth.get_balance(
-            funded_base_sepolia_account
+        balance = await base_sepolia_w3.eth.get_balance(funded_base_sepolia_account)
+        print(
+            f"\n[Base Sepolia] address={funded_base_sepolia_account} balance={balance / 10**18:.6f} ETH"
         )
-        print(f"\n[Base Sepolia] address={funded_base_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Base Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -175,10 +179,10 @@ class TestFaucetZkSyncSepolia:
         self, funded_zksync_sepolia_account, zksync_sepolia_w3
     ):
         """After the faucet fixture runs the wallet must have ≥ 0.01 ETH on zkSync Sepolia."""
-        balance = await zksync_sepolia_w3.eth.get_balance(
-            funded_zksync_sepolia_account
+        balance = await zksync_sepolia_w3.eth.get_balance(funded_zksync_sepolia_account)
+        print(
+            f"\n[zkSync Sepolia] address={funded_zksync_sepolia_account} balance={balance / 10**18:.6f} ETH"
         )
-        print(f"\n[zkSync Sepolia] address={funded_zksync_sepolia_account} balance={balance / 10**18:.6f} ETH")
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on zkSync Sepolia, got {balance / 10**18:.6f} ETH"
         )
@@ -195,7 +199,9 @@ class TestFaucetHyperliquidTestnet:
         balance = await hyperliquid_testnet_w3.eth.get_balance(
             funded_hyperliquid_testnet_account
         )
-        print(f"\n[Hyperliquid Testnet] address={funded_hyperliquid_testnet_account} balance={balance / 10**18:.6f} ETH")
+        print(
+            f"\n[Hyperliquid Testnet] address={funded_hyperliquid_testnet_account} balance={balance / 10**18:.6f} ETH"
+        )
         assert balance >= _MIN_BALANCE, (
             f"Expected ≥ 0.01 ETH on Hyperliquid testnet, got {balance / 10**18:.6f} ETH"
         )
@@ -238,12 +244,16 @@ class TestCircleFaucet:
             address=AsyncWeb3.to_checksum_address(usdc_address), abi=abi
         )
         balance_before = await usdc.functions.balanceOf(checksum).call()
-        print(f"\n[USDC {chain}] address={testnet_address} balance_before={balance_before / 10**6:.6f} USDC")
+        print(
+            f"\n[USDC {chain}] address={testnet_address} balance_before={balance_before / 10**6:.6f} USDC"
+        )
 
         await drip_usdc(testnet_address, chain)
 
         balance_after = await usdc.functions.balanceOf(checksum).call()
-        print(f"[USDC {chain}] address={testnet_address} balance_after={balance_after / 10**6:.6f} USDC")
+        print(
+            f"[USDC {chain}] address={testnet_address} balance_after={balance_after / 10**6:.6f} USDC"
+        )
         assert balance_after >= balance_before, (
             f"USDC balance did not increase after drip on {chain}"
         )

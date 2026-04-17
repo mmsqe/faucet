@@ -170,6 +170,7 @@ async def _drip_via_browser(
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
     from faucet.alchemy import _start_browser
+
     browser = await _start_browser(uc, headless=headless)
     try:
         page = await browser.get(_PAGE_URL)

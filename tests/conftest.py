@@ -6,9 +6,9 @@ and verify the wallet balance on-chain.
 
 Configure via environment variables::
 
-    TESTNET_ADDRESS   — wallet address to fund (required)
+    TESTNET_ADDRESS    — wallet address to fund (required)
     CHAINSTACK_API_KEY — Chainstack API key for fast REST-API drips (optional)
-    INFURA_KEY        — Infura project key; if set, all RPC URLs use Infura
+    INFURA_KEY         — Infura project key; see faucet.rpc for URL resolution
 
 Run testnet tests with::
 
@@ -21,26 +21,21 @@ import os
 from web3 import AsyncWeb3
 
 from dotenv import load_dotenv
+from faucet.rpc import (
+    SEPOLIA_RPC_URL,
+    OP_SEPOLIA_RPC_URL,
+    BASE_SEPOLIA_RPC_URL,
+    ZKSYNC_SEPOLIA_RPC_URL,
+    ARBITRUM_SEPOLIA_RPC_URL,
+    POLYGON_AMOY_RPC_URL,
+    AVALANCHE_FUJI_RPC_URL,
+    HL_TESTNET_RPC_URL,
+)
+
 
 load_dotenv()
 
-_INFURA_KEY = os.environ.get("INFURA_KEY", "")
 
-
-def _rpc(infura_network: str, fallback: str) -> str:
-    if _INFURA_KEY:
-        return f"https://{infura_network}.infura.io/v3/{_INFURA_KEY}"
-    return fallback
-
-
-SEPOLIA_RPC_URL = _rpc("sepolia", "https://rpc.sepolia.org")
-OP_SEPOLIA_RPC_URL = _rpc("optimism-sepolia", "https://sepolia.optimism.io")
-BASE_SEPOLIA_RPC_URL = _rpc("base-sepolia", "https://sepolia.base.org")
-ZKSYNC_SEPOLIA_RPC_URL = _rpc("zksync-sepolia", "https://sepolia.era.zksync.dev")
-ARBITRUM_SEPOLIA_RPC_URL = os.environ.get("ARBITRUM_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc")
-POLYGON_AMOY_RPC_URL = os.environ.get("POLYGON_AMOY_RPC_URL", "https://rpc-amoy.polygon.technology")
-AVALANCHE_FUJI_RPC_URL = os.environ.get("AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com")
-HL_TESTNET_RPC_URL = os.environ.get("HL_TESTNET_RPC_URL", "https://rpc.hyperliquid-testnet.xyz/evm")
 TESTNET_ADDRESS = os.environ.get("TESTNET_ADDRESS", "")
 
 # EVM chains that have a known USDC contract — used by the parametrized USDC test.

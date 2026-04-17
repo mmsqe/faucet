@@ -39,6 +39,7 @@ from faucet.alchemy import drip as _alchemy_drip
 from faucet.circle import CHAINS as USDC_CHAINS
 from faucet.circle import USDC_CONTRACTS
 from faucet.circle import drip as drip_usdc
+from faucet.sweep import sweep
 
 # ---------------------------------------------------------------------------
 # Chainstack fallback — maps Alchemy chain slug → Chainstack chain slug
@@ -144,4 +145,5 @@ __all__ = [
     "drip_usdc",
     "is_contract_deployed",
     "is_chain_synced",
+    "sweep",
 ]
