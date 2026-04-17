@@ -33,7 +33,7 @@ jobs:
         with:
           chrome-version: 135
 
-      - name: Run testnet faucet tests
-        run: uv run pytest -m testnet tests/test_faucet_live.py -vvv -s
+      - name: Run faucet script
+        run: uv run python scripts/drip.py
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
