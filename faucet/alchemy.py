@@ -12,6 +12,7 @@ API endpoint discovered from browser network traffic:
 from __future__ import annotations
 
 import asyncio
+import os
 
 import aiohttp
 
@@ -139,6 +140,48 @@ async def drip(
 # ---------------------------------------------------------------------------
 
 
+async def _start_browser(uc, *, headless: bool = True):
+    """Launch a nodriver browser that works in CI.
+
+    nodriver's own launcher pipes Chrome's stdout/stderr, which can stall
+    Chrome before the DevTools port opens.  In CI we start Chrome ourselves
+    with DEVNULL streams, wait for it to be ready, then hand the running
+    process to nodriver via connect-existing mode.
+    """
+    if not os.environ.get("CI"):
+        return await uc.start(headless=headless)
+
+    import tempfile
+    from nodriver.core.config import find_chrome_executable
+    from nodriver.core.util import free_port
+
+    chrome_path = os.environ.get("CHROME_PATH") or find_chrome_executable()
+    port = free_port()
+    user_data_dir = tempfile.mkdtemp(prefix="uc_")
+
+    proc = await asyncio.create_subprocess_exec(
+        chrome_path,
+        f"--remote-debugging-port={port}",
+        "--remote-debugging-host=127.0.0.1",
+        "--remote-allow-origins=*",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--headless=new",
+        f"--user-data-dir={user_data_dir}",
+        "--no-first-run",
+        "--disable-features=IsolateOrigins,site-per-process",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    await asyncio.sleep(3)  # wait for DevTools port to be ready
+
+    browser = await uc.start(host="127.0.0.1", port=port)
+    browser._process = proc
+    browser._process_pid = proc.pid
+    return browser
+
+
 async def _get_turnstile_token(
     page_url: str,
     address: str,
@@ -152,7 +195,7 @@ async def _get_turnstile_token(
     except ImportError as exc:
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
-    browser = await uc.start(headless=headless)
+    browser = await _start_browser(uc, headless=headless)
     try:
         page = await browser.get(page_url)
         await asyncio.sleep(5)  # let the page JS initialise the Turnstile widget

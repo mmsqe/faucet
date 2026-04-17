@@ -169,7 +169,8 @@ async def _drip_via_browser(
     except ImportError as exc:
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
-    browser = await uc.start(headless=headless)
+    from faucet.alchemy import _start_browser
+    browser = await _start_browser(uc, headless=headless)
     try:
         page = await browser.get(_PAGE_URL)
         await asyncio.sleep(6)  # wait for React hydration + network grid to render
