@@ -122,10 +122,21 @@ async def _drip_via_api(address: str, chain: str, *, api_key: str) -> str | None
                 "Content-Type": "application/json",
             },
         ) as resp:
-            data = await resp.json(content_type=None)
+            text = await resp.text()
+
+    if not text.strip():
+        raise FaucetError(f"Chainstack API error ({resp.status}): empty response body")
+    try:
+        import json
+
+        data = json.loads(text)
+    except ValueError as exc:
+        raise FaucetError(
+            f"Chainstack API error ({resp.status}): non-JSON body: {text[:200]!r}"
+        ) from exc
 
     if isinstance(data, dict) and "error" in data:
-        msg = data["error"]
+        msg = str(data["error"])
         if resp.status == 429:
             raise RateLimitError(msg)
         if (

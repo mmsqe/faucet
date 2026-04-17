@@ -13,6 +13,7 @@ jobs:
       TESTNET_ADDRESS: ${{ secrets.TESTNET_ADDRESS }}
       CHAINSTACK_API_KEY: ${{ secrets.CHAINSTACK_API_KEY }}
       INFURA_KEY: ${{ secrets.INFURA_KEY }}
+      TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY }}
 
     steps:
       - uses: actions/checkout@v4

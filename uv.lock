@@ -572,6 +572,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "nodriver" },
+    { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
@@ -579,7 +580,6 @@ dev = [
     { name = "eth-account" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "python-dotenv" },
     { name = "ruff" },
     { name = "web3" },
 ]
@@ -588,6 +588,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "nodriver", specifier = ">=0.48" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -595,7 +596,6 @@ dev = [
     { name = "eth-account", specifier = ">=0.11.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-asyncio", specifier = ">=0.21" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "ruff", specifier = ">=0.15.10" },
     { name = "web3", specifier = ">=7.0.0" },
 ]

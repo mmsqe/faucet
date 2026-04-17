@@ -4,11 +4,8 @@ import asyncio
 import os
 import sys
 
-from dotenv import load_dotenv
 from web3 import Web3
 from faucet.sweep import sweep
-
-load_dotenv()
 
 
 private_key = os.environ.get("TESTNET_PRIVATE_KEY", "")

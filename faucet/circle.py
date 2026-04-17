@@ -120,15 +120,15 @@ async def _drip_via_browser(
         await asyncio.sleep(5)  # wait for React hydration and reCAPTCHA to load
 
         # --- Step 1: select the target network ---
-        # The network selector is a custom React dropdown; clicking an item
-        # with matching textContent selects it.
+        # Circle uses Downshift for its chain dropdown.  The toggle button has
+        # aria-haspopup="listbox" and an id ending in "-toggle-button".
+        # Options are <span role="option"> with a .select-label[title] inner span.
         opened = await page.evaluate("""
             (() => {
-                // Click the dropdown trigger (shows the currently selected network)
                 const trigger =
-                    document.querySelector('[role="combobox"]') ||
                     document.querySelector('[aria-haspopup="listbox"]') ||
-                    document.querySelector('[aria-expanded]');
+                    document.querySelector('[role="combobox"]') ||
+                    document.querySelector('[id$="-toggle-button"]');
                 if (trigger) { trigger.click(); return true; }
                 return false;
             })()
@@ -137,18 +137,29 @@ async def _drip_via_browser(
             raise FaucetError("Circle faucet: network dropdown trigger not found.")
         await asyncio.sleep(1)
 
+        # network_text is injected as a JS string literal using double quotes so
+        # names containing spaces/parens (e.g. "Polygon PoS Amoy") are safe.
         _raw = await page.evaluate(f"""
             (() => {{
-                const options = Array.from(
-                    document.querySelectorAll('[role="option"], li, [role="listitem"]')
+                const target = "{network_text}";
+                // Primary: exact title match on .select-label span.
+                const label = document.querySelector(
+                    '.select-label[title="' + target + '"]'
                 );
-                const needle = {network_text!r}.toLowerCase();
-                const target = options.find(
+                if (label) {{
+                    const opt = label.closest('[role="option"]');
+                    if (opt) {{ opt.click(); return 'ok'; }}
+                }}
+                // Fallback: case-insensitive text content scan.
+                const needle = target.toLowerCase();
+                const options = Array.from(document.querySelectorAll('[role="option"]'));
+                const match = options.find(
                     el => el.textContent.trim().toLowerCase().includes(needle)
                 );
-                if (target) {{ target.click(); return 'ok'; }}
-                // Return available option texts to aid debugging.
-                return options.map(el => el.textContent.trim()).filter(Boolean).join('||');
+                if (match) {{ match.click(); return 'ok'; }}
+                return options
+                    .map(el => el.querySelector('.select-label')?.textContent.trim())
+                    .filter(Boolean).join('||');
             }})()
         """)
         result = str(_raw) if _raw is not None else ""

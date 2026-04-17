@@ -82,7 +82,7 @@ async def drip(
     chain: str,
     *,
     headless: bool = False,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
 ) -> str | None:
     """Fund *address* on *chain* via the Alchemy faucet.
 
@@ -96,7 +96,7 @@ async def drip(
             Must be a key in :data:`CHAINS`.
         headless: Run Chrome in headless mode.  ``False`` (default) is more
             reliable — Turnstile solves faster with a visible window.
-        timeout: Seconds to wait for Turnstile to solve (default 30).
+        timeout: Seconds to wait for Turnstile to solve (default 60).
 
     Returns:
         Transaction hash string, or ``None`` if the API did not return one.

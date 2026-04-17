@@ -64,7 +64,7 @@ async def drip(
     chain: str,
     *,
     headless: bool = False,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
 ) -> str | None:
     """Fund *address* on *chain* via the Alchemy faucet, with Chainstack fallback.
 
@@ -80,7 +80,7 @@ async def drip(
         chain: Chain slug, e.g. ``"optimism-sepolia"`` or ``"hyperliquid-testnet"``.
             Must be a key in :data:`CHAINS` or a Chainstack-only chain.
         headless: Run Chrome in headless mode (default: ``False``).
-        timeout: Seconds to wait for Turnstile to solve (default: 30).
+        timeout: Seconds to wait for Turnstile to solve (default: 60).
 
     Returns:
         Transaction hash string, or ``None`` if the API did not return one.
@@ -96,7 +96,9 @@ async def drip(
         )
     try:
         return await _alchemy_drip(address, chain, headless=headless, timeout=timeout)
-    except InsufficientFaucetBalanceError:
+    except RateLimitError:
+        raise
+    except FaucetError:
         cs_chain = _CHAINSTACK_FALLBACK.get(chain)
         if cs_chain is None:
             raise

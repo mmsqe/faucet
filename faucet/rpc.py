@@ -12,6 +12,10 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _rpc(infura_network: str | None, env_var: str, fallback: str) -> str:
     infura_key = os.environ.get("INFURA_KEY", "")

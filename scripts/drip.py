@@ -2,19 +2,24 @@
 
 import asyncio
 import gc
+import logging
 import os
 import sys
-
-from dotenv import load_dotenv
+from typing import Any
 
 from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
+from faucet import aave as _aave
 from faucet import chainstack as _chainstack
 
-load_dotenv()
+logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
+logging.getLogger("nodriver").setLevel(logging.WARNING)
+logging.getLogger("uc").setLevel(logging.WARNING)
 
 address = os.environ.get("TESTNET_ADDRESS", "")
 if not address:
     sys.exit("TESTNET_ADDRESS is not set")
+
+private_key = os.environ.get("TESTNET_PRIVATE_KEY", "")
 
 _ALL_NATIVE_CHAINS: list[str] = sorted(
     set(CHAINS.keys()) | (_chainstack.CHAINS - set(CHAINS.keys()))
@@ -32,7 +37,7 @@ async def _drip_native(chain: str) -> tuple[str, str | None, str | None]:
             tx = await drip(address, chain)
             return chain, tx, None
         except Exception as exc:
-            return chain, None, str(exc)
+            return chain, None, repr(exc)
 
 
 async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
@@ -41,33 +46,58 @@ async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
             await drip_usdc(address, chain)
             return chain, None
         except Exception as exc:
-            return chain, str(exc)
+            return chain, repr(exc)
 
 
 async def main() -> None:
+    do_native = True
+    do_usdc = True
+    do_aave = bool(private_key)
     print(
-        f"Funding {address} on {len(_ALL_NATIVE_CHAINS)} native chains "
-        f"and {len(_USDC_EVM_CHAINS)} USDC chains\n"
+        f"Funding {address} on {len(_ALL_NATIVE_CHAINS)} native chains, "
+        f"{len(_USDC_EVM_CHAINS)} USDC chains"
+        + (f", and {len(_aave.TOKENS)} Aave tokens" if do_aave else "")
+        + "\n"
     )
 
-    native_results, usdc_results = await asyncio.gather(
-        asyncio.gather(*[_drip_native(c) for c in _ALL_NATIVE_CHAINS]),
-        asyncio.gather(*[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]),
-    )
+    gather_fns: dict[str, Any] = {}
+    if do_native:
+        gather_fns["native"] = asyncio.gather(
+            *[_drip_native(c) for c in _ALL_NATIVE_CHAINS]
+        )
+    if do_usdc:
+        gather_fns["usdc"] = asyncio.gather(
+            *[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]
+        )
+    if do_aave:
+        gather_fns["aave"] = _aave.drip_all(address, private_key)
 
-    print("Native tokens:")
-    for chain, tx, err in native_results:
-        if err:
-            print(f"  {chain}: ERROR — {err}")
-        else:
-            print(f"  {chain}: tx={tx}")
+    results = dict(zip(gather_fns, await asyncio.gather(*gather_fns.values())))
 
-    print("\nUSDC:")
-    for chain, err in usdc_results:
-        if err:
-            print(f"  {chain}: ERROR — {err}")
-        else:
-            print(f"  {chain}: ok")
+    if do_native:
+        print("Native tokens:")
+        for chain, tx, err in results["native"]:
+            if err:
+                print(f"  {chain}: ERROR — {err}")
+            else:
+                print(f"  {chain}: tx={tx}")
+
+    if do_usdc:
+        print("\nUSDC:")
+        for chain, err in results["usdc"]:
+            if err:
+                print(f"  {chain}: ERROR — {err}")
+            else:
+                print(f"  {chain}: ok")
+
+    aave_result: dict = results.get("aave", {})
+    if aave_result:
+        print("\nAave (Ethereum Sepolia):")
+        for token, (tx_hash, err) in aave_result.items():
+            if err:
+                print(f"  {token}: ERROR — {err}")
+            else:
+                print(f"  {token}: tx={tx_hash}")
 
 
 loop = asyncio.new_event_loop()
