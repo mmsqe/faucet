@@ -123,17 +123,22 @@ async def _drip_via_browser(
         # Circle uses Downshift for its chain dropdown.  The toggle button has
         # aria-haspopup="listbox" and an id ending in "-toggle-button".
         # Options are <span role="option"> with a .select-label[title] inner span.
-        opened = await page.evaluate("""
-            (() => {
-                const trigger =
-                    document.querySelector('[aria-haspopup="listbox"]') ||
-                    document.querySelector('[role="combobox"]') ||
-                    document.querySelector('[id$="-toggle-button"]');
-                if (trigger) { trigger.click(); return true; }
-                return false;
-            })()
-        """)
-        if not opened:
+        # Retry up to 3 times — CI runners can be slow to hydrate React.
+        for _attempt in range(3):
+            opened = await page.evaluate("""
+                (() => {
+                    const trigger =
+                        document.querySelector('[aria-haspopup="listbox"]') ||
+                        document.querySelector('[role="combobox"]') ||
+                        document.querySelector('[id$="-toggle-button"]');
+                    if (trigger) { trigger.click(); return true; }
+                    return false;
+                })()
+            """)
+            if opened:
+                break
+            await asyncio.sleep(3)
+        else:
             raise FaucetError("Circle faucet: network dropdown trigger not found.")
         await asyncio.sleep(1)
 

@@ -140,7 +140,11 @@ async def drip_all(
     async def _wait(token: str, tx_hash: str) -> tuple[str, str | None, str | None]:
         log.debug("%s waiting for receipt tx=%s", token, tx_hash)
         try:
-            receipt = await w3.eth.wait_for_transaction_receipt(tx_hash)
+            receipt = await w3.eth.wait_for_transaction_receipt(
+                tx_hash,
+                timeout=120,
+                poll_latency=5,
+            )
             if receipt["status"] != 1:
                 log.warning("%s reverted tx=%s", token, tx_hash)
                 return token, None, f"reverted (tx={tx_hash})"
