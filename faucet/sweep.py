@@ -31,11 +31,16 @@ from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.types import TxParams
 
+from faucet.aave import TOKENS as _AAVE_TOKENS
 from faucet.rpc import EVM_CHAINS
 
 _ERC20_GAS_LIMIT = 100_000
 _CHAIN_TIMEOUT = 60.0
 _RPC_REQUEST_TIMEOUT = 10
+
+# On Ethereum Sepolia, leave gas behind for the next Aave faucet run, which
+# mints each supported token via on-chain calls (~150k gas each) from this key.
+_AAVE_GAS_RESERVE: dict[str, int] = {"ethereum-sepolia": len(_AAVE_TOKENS) * 150_000}
 
 _ERC20_TRANSFER_ABI = [
     {
@@ -134,7 +139,16 @@ async def _sweep_chain(
                 )
                 usdc_reserve = erc20_price_eff * _ERC20_GAS_LIMIT * 2
 
-            total_reserve = native_gas_cost + usdc_reserve
+            aave_reserve = 0
+            aave_gas = _AAVE_GAS_RESERVE.get(chain)
+            if aave_gas:
+                aave_gas_params = await _build_tx_params(w3, aave_gas)
+                aave_price_eff = aave_gas_params.get(
+                    "maxFeePerGas", aave_gas_params.get("gasPrice", 0)
+                )
+                aave_reserve = aave_price_eff * aave_gas * 2
+
+            total_reserve = native_gas_cost + usdc_reserve + aave_reserve
             if balance_before <= total_reserve:
                 print(f"  [{chain}] {symbol} skip: balance below gas cost")
             else:

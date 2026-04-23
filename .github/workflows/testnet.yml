@@ -14,6 +14,7 @@ jobs:
       CHAINSTACK_API_KEY: ${{ secrets.CHAINSTACK_API_KEY }}
       INFURA_KEY: ${{ secrets.INFURA_KEY }}
       TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY }}
+      SWEEP_TO_ADDRESS: ${{ secrets.SWEEP_TO_ADDRESS }}
 
     steps:
       - uses: actions/checkout@v4

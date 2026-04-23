@@ -10,6 +10,7 @@ from typing import Any
 from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
 from faucet import aave as _aave
 from faucet import chainstack as _chainstack
+from faucet.sweep import sweep
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
 logging.getLogger("nodriver").setLevel(logging.WARNING)
@@ -20,6 +21,7 @@ if not address:
     sys.exit("TESTNET_ADDRESS is not set")
 
 private_key = os.environ.get("TESTNET_PRIVATE_KEY", "")
+sweep_to = os.environ.get("SWEEP_TO_ADDRESS", "")
 
 _ALL_NATIVE_CHAINS: list[str] = sorted(
     set(CHAINS.keys()) | (_chainstack.CHAINS - set(CHAINS.keys()))
@@ -100,9 +102,31 @@ async def main() -> None:
                 print(f"  {token}: tx={tx_hash}")
 
 
+async def _sweep() -> None:
+    if not private_key or not sweep_to:
+        return
+    from web3 import Web3
+
+    sender = Web3().eth.account.from_key(private_key).address
+    if sender.lower() == sweep_to.lower():
+        print("\nSweep skipped: sender == recipient")
+        return
+    print(f"\nSweeping {sender} → {sweep_to}")
+    results = await sweep(private_key, sweep_to)
+    if results:
+        for r in results:
+            decimals = 6 if r.token == "USDC" else 18
+            print(
+                f"  {r.chain}: {r.value / 10**decimals:.6f} {r.token}  tx={r.tx_hash}"
+            )
+    else:
+        print("  Nothing to sweep.")
+
+
 loop = asyncio.new_event_loop()
 try:
     loop.run_until_complete(main())
+    loop.run_until_complete(_sweep())
     gc.collect()
     loop.run_until_complete(asyncio.sleep(0.25))
 finally:

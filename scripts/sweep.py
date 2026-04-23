@@ -1,4 +1,4 @@
-"""Sweep all testnet native tokens and USDC from TESTNET_PRIVATE_KEY to TESTNET_ADDRESS."""
+"""Sweep all testnet native tokens and USDC from TESTNET_PRIVATE_KEY to SWEEP_TO_ADDRESS."""
 
 import asyncio
 import os
@@ -9,12 +9,12 @@ from faucet.sweep import sweep
 
 
 private_key = os.environ.get("TESTNET_PRIVATE_KEY", "")
-to_address = os.environ.get("TESTNET_ADDRESS", "")
+to_address = os.environ.get("SWEEP_TO_ADDRESS", "")
 
 if not private_key:
     sys.exit("TESTNET_PRIVATE_KEY is not set")
 if not to_address:
-    sys.exit("TESTNET_ADDRESS is not set")
+    sys.exit("SWEEP_TO_ADDRESS is not set")
 
 sender = Web3().eth.account.from_key(private_key).address
 if sender.lower() == to_address.lower():
