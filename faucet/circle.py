@@ -18,6 +18,7 @@ Automation flow:
 from __future__ import annotations
 
 import asyncio
+import os
 
 from faucet.alchemy import FaucetError, RateLimitError
 
@@ -112,9 +113,7 @@ async def _drip_via_browser(
     except ImportError as exc:
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
-    from faucet.alchemy import _start_browser
-
-    browser = await _start_browser(uc, headless=headless)
+    browser = await uc.start(headless=headless, sandbox=not os.environ.get("CI"))
     try:
         page = await browser.get(_PAGE_URL)
         await asyncio.sleep(5)  # wait for React hydration and reCAPTCHA to load

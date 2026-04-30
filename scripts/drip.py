@@ -58,15 +58,18 @@ async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
 
 
 async def main() -> None:
-    do_native = True
+    # Skip native drip in CI: runner IPs lose Cloudflare Turnstile.
+    do_native = not os.environ.get("CI")
     do_usdc = True
     do_aave = bool(private_key)
-    print(
-        f"Funding {address} on {len(_ALL_NATIVE_CHAINS)} native chains, "
-        f"{len(_USDC_EVM_CHAINS)} USDC chains"
-        + (f", and {len(_aave.TOKENS)} Aave tokens" if do_aave else "")
-        + "\n"
-    )
+    parts = []
+    if do_native:
+        parts.append(f"{len(_ALL_NATIVE_CHAINS)} native chains")
+    if do_usdc:
+        parts.append(f"{len(_USDC_EVM_CHAINS)} USDC chains")
+    if do_aave:
+        parts.append(f"{len(_aave.TOKENS)} Aave tokens")
+    print(f"Funding {address} on {', '.join(parts)}\n")
 
     gather_fns: dict[str, Any] = {}
     if do_native:

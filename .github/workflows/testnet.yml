@@ -35,7 +35,14 @@ jobs:
         with:
           chrome-version: 135
 
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Run faucet script
-        run: uv run python scripts/drip.py
+        # Run under Xvfb: Circle USDC's faucet uses Cloudflare Turnstile,
+        # which detects --headless=new even with stealth flags.  A virtual
+        # display lets Chrome run in real (non-headless) mode in CI.
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x900x24' uv run python scripts/drip.py
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          DISPLAY: ":99"
