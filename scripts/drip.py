@@ -31,6 +31,10 @@ _ALL_NATIVE_CHAINS: list[str] = sorted(
 _USDC_EVM_CHAINS: list[str] = [c for c in USDC_CHAINS if not c.startswith("solana")]
 
 _sem = asyncio.Semaphore(3)
+# Circle's faucet (faucet.circle.com) is fronted by Cloudflare and 1015's
+# the runner IP when hit in parallel. Serialize Circle drips with a delay.
+_circle_sem = asyncio.Semaphore(1)
+_CIRCLE_GAP_SECONDS = 8.0
 
 
 async def _drip_native(chain: str) -> tuple[str, str | None, str | None]:
@@ -43,12 +47,14 @@ async def _drip_native(chain: str) -> tuple[str, str | None, str | None]:
 
 
 async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
-    async with _sem:
+    async with _circle_sem:
         try:
             await drip_usdc(address, chain)
             return chain, None
         except Exception as exc:
             return chain, repr(exc)
+        finally:
+            await asyncio.sleep(_CIRCLE_GAP_SECONDS)
 
 
 async def main() -> None:
