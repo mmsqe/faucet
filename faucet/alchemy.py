@@ -12,7 +12,6 @@ API endpoint discovered from browser network traffic:
 from __future__ import annotations
 
 import asyncio
-import os
 
 import aiohttp
 
@@ -97,6 +96,7 @@ async def drip(
         headless: Run Chrome in headless mode.  ``False`` (default) is more
             reliable — Turnstile solves faster with a visible window.
         timeout: Seconds to wait for Turnstile to solve (default 60).
+            Includes a single page-reload retry if the first attempt stalls.
 
     Returns:
         Transaction hash string, or ``None`` if the API did not return one.
@@ -140,48 +140,6 @@ async def drip(
 # ---------------------------------------------------------------------------
 
 
-async def _start_browser(uc, *, headless: bool = True):
-    """Launch a nodriver browser that works in CI.
-
-    nodriver's own launcher pipes Chrome's stdout/stderr, which can stall
-    Chrome before the DevTools port opens.  In CI we start Chrome ourselves
-    with DEVNULL streams, wait for it to be ready, then hand the running
-    process to nodriver via connect-existing mode.
-    """
-    if not os.environ.get("CI"):
-        return await uc.start(headless=headless)
-
-    import tempfile
-    from nodriver.core.config import find_chrome_executable
-    from nodriver.core.util import free_port
-
-    chrome_path = os.environ.get("CHROME_PATH") or find_chrome_executable()
-    port = free_port()
-    user_data_dir = tempfile.mkdtemp(prefix="uc_")
-
-    proc = await asyncio.create_subprocess_exec(
-        chrome_path,
-        f"--remote-debugging-port={port}",
-        "--remote-debugging-host=127.0.0.1",
-        "--remote-allow-origins=*",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--headless=new",
-        f"--user-data-dir={user_data_dir}",
-        "--no-first-run",
-        "--disable-features=IsolateOrigins,site-per-process",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
-    await asyncio.sleep(3)  # wait for DevTools port to be ready
-
-    browser = await uc.start(host="127.0.0.1", port=port)
-    browser._process = proc
-    browser._process_pid = proc.pid
-    return browser
-
-
 async def _get_turnstile_token(
     page_url: str,
     address: str,
@@ -195,24 +153,257 @@ async def _get_turnstile_token(
     except ImportError as exc:
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
-    browser = await _start_browser(uc, headless=headless)
+    browser = await uc.start(headless=headless)
     try:
-        page = await browser.get(page_url)
-        await asyncio.sleep(5)  # let the page JS initialise the Turnstile widget
-
-        elem = await page.select("#wallet-address")
-        await elem.click()  # focus triggers Turnstile initialisation
-        await elem.send_keys(address)
-
-        deadline = asyncio.get_event_loop().time() + timeout
-        while True:
-            if asyncio.get_event_loop().time() > deadline:
-                raise FaucetError(f"Turnstile did not solve within {timeout}s")
-            await asyncio.sleep(1)
-            token: str = await page.evaluate(
-                'document.querySelector("input[name=\'cf-turnstile-response\']")?.value || ""'
+        # Open a blank tab first so we can install the attachShadow override
+        # *before* navigating — Cloudflare Turnstile uses a closed shadow root,
+        # which forecloses our DOM walker. Forcing every shadow root to open
+        # mode lets us reach the iframe.
+        page = await browser.get("about:blank")
+        await page.send(
+            uc.cdp.page.add_script_to_evaluate_on_new_document(
+                source=(
+                    "(() => {"
+                    "  const orig = Element.prototype.attachShadow;"
+                    "  Element.prototype.attachShadow = function(init) {"
+                    "    return orig.call(this, Object.assign({}, init, {mode: 'open'}));"
+                    "  };"
+                    # Hide common automation fingerprints Turnstile probes for.
+                    "  try {"
+                    "    Object.defineProperty(navigator, 'webdriver', "
+                    "      {get: () => undefined, configurable: true});"
+                    "  } catch (e) {}"
+                    "  try {"
+                    "    Object.defineProperty(navigator, 'languages', "
+                    "      {get: () => ['en-US', 'en'], configurable: true});"
+                    "  } catch (e) {}"
+                    "  try {"
+                    "    Object.defineProperty(navigator, 'plugins', "
+                    "      {get: () => [1, 2, 3, 4, 5], configurable: true});"
+                    "  } catch (e) {}"
+                    "  try {"
+                    "    window.chrome = window.chrome || {runtime: {}};"
+                    "  } catch (e) {}"
+                    "})();"
+                )
             )
-            if token:
-                return token
+        )
+
+        # Split timeout across two attempts — first round of the managed
+        # challenge often hangs in "Verifying…" indefinitely; a fresh page
+        # often rolls a passable challenge.
+        per_attempt = max(45.0, timeout / 2)
+        attempts = 2 if timeout >= 90 else 1
+        last_err: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return await _solve_once(page, page_url, address, timeout=per_attempt)
+            except FaucetError as exc:
+                last_err = exc
+                if attempt == attempts - 1:
+                    raise
+        # Unreachable, but keeps the type checker happy.
+        raise last_err if last_err else FaucetError("Turnstile failed")
     finally:
         browser.stop()
+
+
+async def _solve_once(
+    page,
+    page_url: str,
+    address: str,
+    *,
+    timeout: float,
+) -> str:
+    """Single attempt: navigate, fill address, wait for the Turnstile token."""
+    import random
+
+    await page.get(page_url)
+    await asyncio.sleep(5)  # let the page JS initialise the Turnstile widget
+
+    # Wiggle the mouse so Turnstile's invisible-mode interaction scoring
+    # sees pointer activity before the address-input click. Without any
+    # pointer events, modern Turnstile scores low and escalates to the
+    # interactive checkbox immediately.
+    try:
+        for _ in range(4):
+            await page.mouse_move(
+                random.uniform(200, 1000),
+                random.uniform(200, 700),
+                steps=random.randint(8, 16),
+            )
+            await asyncio.sleep(random.uniform(0.1, 0.25))
+    except Exception:
+        pass
+
+    elem = await page.select("#wallet-address")
+    await elem.click()  # focus triggers Turnstile initialisation
+    await elem.send_keys(address)
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    last_click = 0.0
+    while True:
+        now = asyncio.get_event_loop().time()
+        if now > deadline:
+            raise FaucetError(f"Turnstile did not solve within {timeout}s")
+        await asyncio.sleep(1)
+        token: str = await page.evaluate(
+            'document.querySelector("input[name=\'cf-turnstile-response\']")?.value || ""'
+        )
+        if token:
+            return token
+        # If Turnstile escalated to interactive mode (visible "Verify you
+        # are human" checkbox), invisible auto-solve will never fire.
+        # Click into the widget iframe to satisfy the managed challenge,
+        # retrying every 5s in case the widget re-rendered.
+        if now - last_click > 5:
+            if await _click_turnstile_checkbox(page):
+                last_click = now
+
+
+async def _click_turnstile_checkbox(page) -> bool:
+    """Click the Turnstile "Verify you are human" checkbox if present.
+
+    The iframe lives inside <template shadowrootmode="closed"> (declarative
+    shadow DOM), so JS-side walks can't reach it — we use CDP DOM with
+    pierce=True. Coordinates from getBoxModel are page-relative; mouse
+    events need viewport-relative, so we subtract scroll offset.
+
+    Cloudflare's checkbox sits on the left side of the widget; the right
+    ~40% is the "Cloudflare / Privacy / Help" branding, which is NOT part
+    of the hit-box. Center-click misses, so target the left side at a
+    fixed offset from the iframe edge.
+    """
+    import json
+    import random
+
+    import nodriver as uc
+
+    doc = await page.send(uc.cdp.dom.get_document(depth=-1, pierce=True))
+    iframe_node = _find_turnstile_iframe(doc)
+    if iframe_node is None:
+        return False
+
+    # Scroll the iframe into view so its viewport-relative coords are valid.
+    try:
+        await page.send(
+            uc.cdp.dom.scroll_into_view_if_needed(
+                backend_node_id=iframe_node.backend_node_id
+            )
+        )
+    except Exception:
+        pass
+    await asyncio.sleep(0.2)
+
+    try:
+        box = await page.send(
+            uc.cdp.dom.get_box_model(backend_node_id=iframe_node.backend_node_id)
+        )
+    except Exception:
+        return False
+    if box is None or not getattr(box, "content", None):
+        return False
+
+    # content quad: [x1,y1, x2,y1, x2,y2, x1,y2] — page-relative.
+    quad = box.content
+    # Checkbox is ~30px from the iframe's left edge, vertically centered.
+    # Add small jitter so repeated retries don't hammer the exact same pixel.
+    page_cx = quad[0] + 30 + random.uniform(-3, 3)
+    page_cy = (quad[1] + quad[5]) / 2 + random.uniform(-2, 2)
+
+    scroll = await page.evaluate(
+        "JSON.stringify({x: window.scrollX || 0, y: window.scrollY || 0})",
+        return_by_value=True,
+    )
+    try:
+        s = json.loads(scroll) if isinstance(scroll, str) else {"x": 0, "y": 0}
+    except Exception:
+        s = {"x": 0, "y": 0}
+    cx = page_cx - s.get("x", 0)
+    cy = page_cy - s.get("y", 0)
+
+    try:
+        # Multi-segment human-like trail — Turnstile rejects teleport clicks
+        # and short straight-line trails. Approach from a random offset.
+        start_dx = random.uniform(-120, -60)
+        start_dy = random.uniform(-80, 80)
+        await page.mouse_move(cx + start_dx, cy + start_dy, steps=10)
+        await asyncio.sleep(random.uniform(0.05, 0.12))
+        await page.mouse_move(
+            cx + start_dx / 2 + random.uniform(-10, 10),
+            cy + start_dy / 2 + random.uniform(-5, 5),
+            steps=12,
+        )
+        await asyncio.sleep(random.uniform(0.05, 0.12))
+        await page.mouse_move(cx, cy, steps=14)
+        await asyncio.sleep(random.uniform(0.08, 0.18))
+        await page.send(
+            uc.cdp.input_.dispatch_mouse_event(
+                "mousePressed",
+                x=cx,
+                y=cy,
+                button=uc.cdp.input_.MouseButton("left"),
+                buttons=1,
+                click_count=1,
+            )
+        )
+        # Real human clicks have ~50–60ms between press and release.
+        await asyncio.sleep(random.uniform(0.07, 0.14))
+        await page.send(
+            uc.cdp.input_.dispatch_mouse_event(
+                "mouseReleased",
+                x=cx,
+                y=cy,
+                button=uc.cdp.input_.MouseButton("left"),
+                buttons=1,
+                click_count=1,
+            )
+        )
+    except Exception:
+        return False
+    return True
+
+
+def _find_turnstile_iframe(node):
+    """Walk a CDP DOM tree (with pierce=True) and return the Cloudflare
+    Turnstile iframe node, or None.
+
+    Traverses children, shadowRoots, contentDocument, templateContent — all
+    the relationships CDP exposes when pierce=True is set on getDocument.
+    """
+    if node is None:
+        return None
+
+    if (getattr(node, "node_name", "") or "").lower() == "iframe":
+        attrs = getattr(node, "attributes", []) or []
+        # attributes is a flat [name, value, name, value, ...] list.
+        attr_map = {attrs[i]: attrs[i + 1] for i in range(0, len(attrs) - 1, 2)}
+        src = (attr_map.get("src") or "").lower()
+        title = (attr_map.get("title") or "").lower()
+        if (
+            "challenges.cloudflare.com" in src
+            or "cdn-cgi/challenge-platform" in src
+            or "turnstile" in src
+            or "cloudflare" in title
+            or "challenge" in title
+        ):
+            return node
+
+    for child_attr in (
+        "children",
+        "shadow_roots",
+        "pseudo_elements",
+    ):
+        for child in getattr(node, child_attr, None) or []:
+            found = _find_turnstile_iframe(child)
+            if found is not None:
+                return found
+
+    for single_attr in ("content_document", "template_content"):
+        child = getattr(node, single_attr, None)
+        if child is not None:
+            found = _find_turnstile_iframe(child)
+            if found is not None:
+                return found
+
+    return None
