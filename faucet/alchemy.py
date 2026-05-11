@@ -4,16 +4,16 @@ Alchemy testnet faucet — nodriver-based automation.
 Uses an undetectable Chrome instance to solve the Cloudflare Turnstile widget
 on the Alchemy faucet page, then POSTs to the faucet API.
 
-API endpoint discovered from browser network traffic:
-  POST https://www.alchemy.com/api/faucet/send
-  Body: {"address": "...", "chainId": "<slug>", "turnstileToken": "..."}
+API endpoint (from _next/static/chunks/0b_y0tnec2m-9.js):
+  POST https://www.alchemy.com/api/faucets/<slug>/send
+  Body: {"address": "...", "turnstileToken": "..."}
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-
+import json
 import aiohttp
 
 # ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ CHAINS: dict[str, str] = {
     "stable-testnet": "https://www.alchemy.com/faucets/stable-testnet",
 }
 
-_FAUCET_API_URL = "https://www.alchemy.com/api/faucet/send"
+_FAUCET_API_URL_TEMPLATE = "https://www.alchemy.com/api/faucets/{slug}/send"
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -116,24 +116,35 @@ async def drip(
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            _FAUCET_API_URL,
-            json={"address": address, "chainId": chain, "turnstileToken": token},
+            _FAUCET_API_URL_TEMPLATE.format(slug=chain),
+            json={"address": address, "turnstileToken": token},
             headers={"Content-Type": "application/json"},
         ) as resp:
-            data = await resp.json(content_type=None)
+            status = resp.status
+            body = await resp.text()
+
+    try:
+        data = json.loads(body) if body else None
+    except ValueError:
+        raise FaucetError(
+            f"Alchemy faucet returned non-JSON ({status}): {body[:300]!r}"
+        ) from None
 
     if isinstance(data, dict) and "error" in data:
-        if resp.status == 429:
+        if status == 429:
             raise RateLimitError(data["error"], reset_at=data.get("resetAt"))
-        if resp.status == 503:
+        if status == 503:
             raise InsufficientFaucetBalanceError(
                 f"Alchemy faucet error (503): {data['error']}"
             )
-        raise FaucetError(f"Alchemy faucet error ({resp.status}): {data['error']}")
+        raise FaucetError(f"Alchemy faucet error ({status}): {data['error']}")
 
-    if isinstance(data, dict):
-        return data.get("transactionHash") or data.get("txHash")
-    return None
+    if not isinstance(data, dict):
+        raise FaucetError(
+            f"Alchemy faucet returned empty/unexpected body ({status}): {body[:300]!r}"
+        )
+
+    return data.get("transactionHash") or data.get("txHash")
 
 
 # ---------------------------------------------------------------------------

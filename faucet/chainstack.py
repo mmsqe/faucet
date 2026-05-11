@@ -34,31 +34,27 @@ _API_BASE_URL = "https://api.chainstack.com/v1/faucet"
 _PAGE_URL = "https://faucet.chainstack.com/"
 
 # Maps our slug → Chainstack REST API chain identifier.
-# Identifiers from https://docs.chainstack.com/reference/chainstack-faucet-introduction
+# Source: https://github.com/chainstack/dev-portal/blob/main/openapi/faucet_api/get_tokens.json
+# The REST API only supports these chains; others must use the SPA browser path.
 _API_CHAIN_IDS: dict[str, str] = {
     "zksync-era-sepolia": "zksync-testnet",
     "ethereum-sepolia": "sepolia",
-    "base-sepolia": "base-sepolia-testnet",
-    "optimism-sepolia": "optimism-sepolia-testnet",
-    "arbitrum-sepolia": "arbitrum-sepolia-testnet",
     "polygon-amoy": "amoy",
-    "hyperliquid-testnet": "hyperliquid-testnet",
 }
 
-# Maps our slug → text fragment that identifies the network in the SPA grid.
-# The grid items contain <span> text like "zkSync Sepolia testnet faucet".
-_NETWORK_TEXT: dict[str, str] = {
-    "zksync-era-sepolia": "zkSync Sepolia",
-    "ethereum-sepolia": "Sepolia testnet",
-    "base-sepolia": "Base Sepolia",
-    "optimism-sepolia": "Optimism Sepolia",
-    "arbitrum-sepolia": "Arbitrum Sepolia",
-    "polygon-amoy": "Amoy",
-    "hyperliquid-testnet": "Hyperliquid",
+# Maps our slug → URL slug of the network card on https://faucet.chainstack.com/.
+# Each network is a link to "/<url-slug>" — anchor selectors are more stable
+# than visible-text matching as the labels are localized/relabeled often.
+_NETWORK_URL: dict[str, str] = {
+    "ethereum-sepolia": "sepolia-testnet-faucet",
+    "base-sepolia": "base-testnet-faucet",
+    "polygon-amoy": "amoy-faucet",
+    "zksync-era-sepolia": "zksync-testnet-faucet",
+    "hyperliquid-testnet": "hyperliquid-testnet-faucet",
 }
 
 #: Public set of chain slugs supported by this module.
-CHAINS: set[str] = set(_NETWORK_TEXT)
+CHAINS: set[str] = set(_NETWORK_URL)
 
 
 async def drip(
@@ -71,8 +67,10 @@ async def drip(
 ) -> str | None:
     """Fund *address* on *chain* via the Chainstack faucet.
 
-    Uses the REST API when *api_key* is provided or ``CHAINSTACK_API_KEY`` is
-    set in the environment.  Falls back to nodriver SPA automation otherwise.
+    Uses the REST API when *api_key* is set AND *chain* is in
+    :data:`_API_CHAIN_IDS` (only 3 chains are exposed via REST).  Otherwise
+    falls back to nodriver SPA automation, which covers all chains on
+    https://faucet.chainstack.com/.
 
     Args:
         address: Wallet address to fund.
@@ -90,16 +88,16 @@ async def drip(
         RateLimitError: Daily drip limit reached.
         FaucetError: Any other API or automation error.
     """
-    if chain not in _NETWORK_TEXT:
+    if chain not in _NETWORK_URL:
         raise ValueError(
             f"Chainstack: unknown chain {chain!r}. Supported: {', '.join(sorted(CHAINS))}"
         )
 
     resolved_key = api_key or os.environ.get("CHAINSTACK_API_KEY", "")
-    if resolved_key:
+    if resolved_key and chain in _API_CHAIN_IDS:
         return await _drip_via_api(address, chain, api_key=resolved_key)
     return await _drip_via_browser(
-        _NETWORK_TEXT[chain], address, headless=headless, timeout=timeout
+        _NETWORK_URL[chain], address, headless=headless, timeout=timeout
     )
 
 
@@ -168,7 +166,7 @@ async def _drip_via_api(address: str, chain: str, *, api_key: str) -> str | None
 
 
 async def _drip_via_browser(
-    network_text: str,
+    network_url: str,
     address: str,
     *,
     headless: bool,
@@ -185,18 +183,20 @@ async def _drip_via_browser(
         page = await browser.get(_PAGE_URL)
         await asyncio.sleep(6)  # wait for React hydration + network grid to render
 
-        # --- Step 1: click the target network in the grid ---
+        # --- Step 1: click the target network's anchor in the grid ---
+        # Match by href suffix instead of visible label — labels get localized
+        # and relabeled, but the URL slug is the chain's stable identifier.
         clicked = await page.evaluate(f"""
             (() => {{
-                const spans = Array.from(document.querySelectorAll('span'));
-                const target = spans.find(el => el.textContent.includes({network_text!r}));
-                if (target) {{ target.click(); return true; }}
+                const link = document.querySelector('a[href$={network_url!r}]') ||
+                             document.querySelector('a[href*={network_url!r}]');
+                if (link) {{ link.click(); return true; }}
                 return false;
             }})()
         """)
         if not clicked:
             raise FaucetError(
-                f"Chainstack: network option {network_text!r} not found on the faucet page. "
+                f"Chainstack: network with slug {network_url!r} not found on the faucet page. "
                 "The page layout may have changed."
             )
         await asyncio.sleep(3)  # wait for address input to render

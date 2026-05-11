@@ -50,8 +50,6 @@ _CHAINSTACK_FALLBACK: dict[str, str] = {
     "zksync-sepolia": "zksync-era-sepolia",
     "ethereum-sepolia": "ethereum-sepolia",
     "base-sepolia": "base-sepolia",
-    "optimism-sepolia": "optimism-sepolia",
-    "arbitrum-sepolia": "arbitrum-sepolia",
     "polygon-amoy": "polygon-amoy",
 }
 

@@ -90,7 +90,7 @@ EVM_CHAINS: dict[str, tuple[str, bool, str]] = {
     "zksync-sepolia": (ZKSYNC_SEPOLIA_RPC_URL, False, "ETH"),
     "arbitrum-sepolia": (ARBITRUM_SEPOLIA_RPC_URL, False, "ETH"),
     "polygon-amoy": (POLYGON_AMOY_RPC_URL, True, "POL"),
-    "avalanche-fuji": (AVALANCHE_FUJI_RPC_URL, False, "AVAX"),
+    "avalanche-fuji": (AVALANCHE_FUJI_RPC_URL, True, "AVAX"),
     "hyperliquid-testnet": (HL_TESTNET_RPC_URL, False, "HYPE"),
     "humanity-testnet": (HUMANITY_TESTNET_RPC_URL, True, "tHP"),
     "soneium-minato": (SONEIUM_MINATO_RPC_URL, False, "ETH"),
