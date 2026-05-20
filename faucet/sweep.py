@@ -1,9 +1,11 @@
 """
-Sweep native tokens and USDC from a private-key account to a recipient address.
+Sweep native tokens, USDC and Compound III testnet tokens to a recipient.
 
 For every EVM chain in :data:`faucet.rpc.EVM_CHAINS`:
   - Native token: send full balance minus gas cost.
   - USDC (where a contract exists): transfer full balance if native covers gas.
+  - Compound III tokens (Ethereum Sepolia only): transfer the full balance of
+    each Fauceteer token (USDC, COMP, WBTC, cbETH).
 
 Uses EIP-1559 transactions where supported (baseFeePerGas available), falling
 back to legacy gasPrice otherwise.
@@ -32,15 +34,25 @@ from web3.middleware import ExtraDataToPOAMiddleware
 from web3.types import TxParams
 
 from faucet.aave import TOKENS as _AAVE_TOKENS
+from faucet.compound import DECIMALS as _COMPOUND_DECIMALS
+from faucet.compound import TOKENS as _COMPOUND_TOKENS
 from faucet.rpc import EVM_CHAINS
 
 _ERC20_GAS_LIMIT = 100_000
-_CHAIN_TIMEOUT = 60.0
+# Ethereum Sepolia does the most work per chain (native + USDC + Compound
+# sweeps), so give the per-chain watchdog more headroom.
+_CHAIN_TIMEOUT = 120.0
 _RPC_REQUEST_TIMEOUT = 10
 
 # On Ethereum Sepolia, leave gas behind for the next Aave faucet run, which
 # mints each supported token via on-chain calls (~150k gas each) from this key.
 _AAVE_GAS_RESERVE: dict[str, int] = {"ethereum-sepolia": len(_AAVE_TOKENS) * 150_000}
+
+# On Ethereum Sepolia, reserve gas for the Compound III token sweep — one
+# ERC-20 transfer per token, run after the native sweep drains the balance.
+_COMPOUND_GAS_RESERVE: dict[str, int] = {
+    "ethereum-sepolia": len(_COMPOUND_TOKENS) * _ERC20_GAS_LIMIT
+}
 
 _ERC20_TRANSFER_ABI = [
     {
@@ -69,6 +81,7 @@ class SweepResult:
     token: str
     tx_hash: str
     value: int  # wei for native, smallest unit for ERC-20
+    decimals: int = 18  # decimals of `token`, for formatting `value`
 
 
 async def _build_tx_params(w3: AsyncWeb3, gas_limit: int) -> dict:
@@ -148,7 +161,18 @@ async def _sweep_chain(
                 )
                 aave_reserve = aave_price_eff * aave_gas * 2
 
-            total_reserve = native_gas_cost + usdc_reserve + aave_reserve
+            compound_reserve = 0
+            compound_gas = _COMPOUND_GAS_RESERVE.get(chain)
+            if compound_gas:
+                compound_gas_params = await _build_tx_params(w3, compound_gas)
+                compound_price_eff = compound_gas_params.get(
+                    "maxFeePerGas", compound_gas_params.get("gasPrice", 0)
+                )
+                compound_reserve = compound_price_eff * compound_gas * 2
+
+            total_reserve = (
+                native_gas_cost + usdc_reserve + aave_reserve + compound_reserve
+            )
             if balance_before <= total_reserve:
                 print(f"  [{chain}] {symbol} skip: balance below gas cost")
             else:
@@ -183,6 +207,14 @@ async def _sweep_chain(
             )
         except Exception as exc:
             print(f"  [{chain}] USDC error: {exc}")
+
+        # ── Compound III testnet tokens ─────────────────────────────────────
+        try:
+            results.extend(
+                await _sweep_compound(chain, w3, sender, checksum_to, account, symbol)
+            )
+        except Exception as exc:
+            print(f"  [{chain}] Compound error: {exc}")
     finally:
         try:
             await asyncio.wait_for(provider.disconnect(), timeout=5)
@@ -255,10 +287,91 @@ async def _sweep_usdc(
     print(f"  [{chain}] USDC after:  {usdc_after / 10**6:.6f}")
     results.append(
         SweepResult(
-            chain=chain, token="USDC", tx_hash=tx_hash.hex(), value=usdc_balance
+            chain=chain,
+            token="USDC",
+            tx_hash=tx_hash.hex(),
+            value=usdc_balance,
+            decimals=6,
         )
     )
 
+    return results
+
+
+async def _sweep_compound(
+    chain: str,
+    w3: AsyncWeb3,
+    sender: ChecksumAddress,
+    checksum_to: ChecksumAddress,
+    account,
+    native_symbol: str,
+) -> list[SweepResult]:
+    """Sweep Compound III testnet ERC-20s — Ethereum Sepolia only.
+
+    Transfers the full balance of each Fauceteer token (USDC, COMP, WBTC,
+    cbETH) one tx at a time, skipping tokens with a zero balance.
+    """
+    results: list[SweepResult] = []
+    if chain not in _COMPOUND_GAS_RESERVE:
+        return results
+
+    chain_id = await w3.eth.chain_id
+    for symbol, token_address in _COMPOUND_TOKENS.items():
+        decimals = _COMPOUND_DECIMALS[symbol]
+        token = w3.eth.contract(
+            address=AsyncWeb3.to_checksum_address(token_address),
+            abi=_ERC20_TRANSFER_ABI,
+        )
+        balance = await token.functions.balanceOf(sender).call()
+        print(f"  [{chain}] {symbol} before: {balance / 10**decimals:.6f}")
+        if balance == 0:
+            print(f"  [{chain}] {symbol} skip: zero balance")
+            continue
+
+        native_now = await w3.eth.get_balance(sender)
+        gas_params = await _build_tx_params(w3, _ERC20_GAS_LIMIT)
+        gas_price_eff = gas_params.get("maxFeePerGas", gas_params.get("gasPrice", 0))
+        gas_cost = gas_price_eff * _ERC20_GAS_LIMIT * 2
+        if native_now < gas_cost:
+            print(
+                f"  [{chain}] {symbol} skip: insufficient {native_symbol} for gas "
+                f"({native_now / 10**18:.8f} < {gas_cost / 10**18:.8f})"
+            )
+            continue
+
+        nonce = await w3.eth.get_transaction_count(sender)
+        tx: TxParams = await token.functions.transfer(
+            checksum_to, balance
+        ).build_transaction(
+            cast(
+                TxParams,
+                {
+                    "from": sender,
+                    "nonce": nonce,
+                    "chainId": chain_id,
+                    **gas_params,
+                },
+            )
+        )
+        signed = account.sign_transaction(tx)
+        tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        status = "ok" if receipt["status"] == 1 else "FAILED"
+        balance_after = await token.functions.balanceOf(sender).call()
+        print(
+            f"  [{chain}] {symbol} sent {balance / 10**decimals:.6f} → {checksum_to}"
+            f"  tx={tx_hash.hex()}  {status}"
+        )
+        print(f"  [{chain}] {symbol} after:  {balance_after / 10**decimals:.6f}")
+        results.append(
+            SweepResult(
+                chain=chain,
+                token=symbol,
+                tx_hash=tx_hash.hex(),
+                value=balance,
+                decimals=decimals,
+            )
+        )
     return results
 
 
@@ -267,7 +380,7 @@ async def sweep(
     to_address: str,
     chains: list[str] | None = None,
 ) -> list[SweepResult]:
-    """Sweep native tokens and USDC from *private_key* to *to_address*.
+    """Sweep native, USDC and Compound III tokens from *private_key* to *to_address*.
 
     Args:
         private_key: Hex private key of the source wallet (with or without ``0x``).

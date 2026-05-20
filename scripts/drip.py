@@ -10,6 +10,7 @@ from typing import Any
 from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
 from faucet import aave as _aave
 from faucet import chainstack as _chainstack
+from faucet import compound as _compound
 from faucet.sweep import sweep
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
@@ -62,6 +63,7 @@ async def main() -> None:
     do_native = not os.environ.get("CI")
     do_usdc = True
     do_aave = bool(private_key)
+    do_compound = True
     parts = []
     if do_native:
         parts.append(f"{len(_ALL_NATIVE_CHAINS)} native chains")
@@ -69,6 +71,8 @@ async def main() -> None:
         parts.append(f"{len(_USDC_EVM_CHAINS)} USDC chains")
     if do_aave:
         parts.append(f"{len(_aave.TOKENS)} Aave tokens")
+    if do_compound:
+        parts.append(f"{len(_compound.TOKENS)} Compound tokens")
     print(f"Funding {address} on {', '.join(parts)}\n")
 
     gather_fns: dict[str, Any] = {}
@@ -82,6 +86,8 @@ async def main() -> None:
         )
     if do_aave:
         gather_fns["aave"] = _aave.drip_all(address, private_key)
+    if do_compound:
+        gather_fns["compound"] = _compound.drip_all(address, private_key)
 
     results = dict(zip(gather_fns, await asyncio.gather(*gather_fns.values())))
 
@@ -110,6 +116,15 @@ async def main() -> None:
             else:
                 print(f"  {token}: tx={tx_hash}")
 
+    compound_result: dict = results.get("compound", {})
+    if compound_result:
+        print("\nCompound III (Ethereum Sepolia):")
+        for token, (tx_hash, err) in compound_result.items():
+            if err:
+                print(f"  {token}: ERROR — {err}")
+            else:
+                print(f"  {token}: tx={tx_hash}")
+
 
 async def _sweep() -> None:
     if not private_key or not sweep_to:
@@ -124,9 +139,8 @@ async def _sweep() -> None:
     results = await sweep(private_key, sweep_to)
     if results:
         for r in results:
-            decimals = 6 if r.token == "USDC" else 18
             print(
-                f"  {r.chain}: {r.value / 10**decimals:.6f} {r.token}  tx={r.tx_hash}"
+                f"  {r.chain}: {r.value / 10**r.decimals:.6f} {r.token}  tx={r.tx_hash}"
             )
     else:
         print("  Nothing to sweep.")
