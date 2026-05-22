@@ -18,6 +18,7 @@ import logging
 from web3 import AsyncWeb3
 
 from faucet.alchemy import FaucetError
+from faucet.nonce import NonceManager
 from faucet.rpc import SEPOLIA_RPC_URL
 
 log = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ async def drip_all(
     tokens: list[str] | None = None,
     *,
     rpc_url: str = SEPOLIA_RPC_URL,
+    nonce_manager: NonceManager | None = None,
 ) -> dict[str, tuple[str | None, str | None]]:
     """Drip multiple Compound III testnet tokens to *address* on Ethereum Sepolia.
 
@@ -109,6 +111,10 @@ async def drip_all(
             the drip).
         tokens: Token symbols to drip. Defaults to all supported tokens.
         rpc_url: Ethereum Sepolia RPC endpoint.
+        nonce_manager: Shared nonce source. Pass the same instance here and to
+            :func:`faucet.aave.drip_all` when running both concurrently from
+            one key, so their transactions do not reuse a nonce. Defaults to a
+            private manager scoped to this call.
 
     Returns:
         ``{token: (tx_hash, None)}`` on success or ``{token: (None, error)}``
@@ -132,22 +138,22 @@ async def drip_all(
         address=AsyncWeb3.to_checksum_address(_FAUCETEER_ADDRESS),
         abi=_FAUCETEER_ABI,
     )
-    nonce = await w3.eth.get_transaction_count(account.address)
-    log.info("dripping %d token(s) to %s (nonce=%d)", len(want), account.address, nonce)
+    nonces = nonce_manager or NonceManager(w3, account.address)
+    log.info("dripping %d token(s) to %s", len(want), account.address)
     sent: dict[str, str] = {}
     errors: dict[str, str] = {}
 
     for token in want:
         token_addr = AsyncWeb3.to_checksum_address(TOKENS[token])
         try:
-            tx = await fauceteer.functions.drip(token_addr).build_transaction(
-                {"from": account.address, "nonce": nonce}
-            )
-            signed = account.sign_transaction(tx)
-            tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
-            log.info("%s sent  tx=%s (nonce=%d)", token, tx_hash.hex(), nonce)
-            sent[token] = tx_hash.hex()
-            nonce += 1
+            async with nonces.reserve() as nonce:
+                tx = await fauceteer.functions.drip(token_addr).build_transaction(
+                    {"from": account.address, "nonce": nonce}
+                )
+                signed = account.sign_transaction(tx)
+                tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+                log.info("%s sent  tx=%s (nonce=%d)", token, tx_hash.hex(), nonce)
+                sent[token] = tx_hash.hex()
         except Exception as exc:
             reason = _reason(exc)
             log.warning("%s send failed: %s", token, reason)

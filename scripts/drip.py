@@ -7,10 +7,14 @@ import os
 import sys
 from typing import Any
 
+from web3 import AsyncWeb3
+
 from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
 from faucet import aave as _aave
 from faucet import chainstack as _chainstack
 from faucet import compound as _compound
+from faucet.nonce import NonceManager
+from faucet.rpc import SEPOLIA_RPC_URL
 from faucet.sweep import sweep
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
@@ -84,10 +88,20 @@ async def main() -> None:
         gather_fns["usdc"] = asyncio.gather(
             *[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]
         )
+    # Aave and Compound both mint on Ethereum Sepolia from the same key; share
+    # one nonce manager so their concurrent transactions never reuse a nonce.
+    sepolia_nonces: NonceManager | None = None
+    if do_aave or do_compound:
+        sepolia_w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(SEPOLIA_RPC_URL))
+        sepolia_nonces = NonceManager(sepolia_w3, address)
     if do_aave:
-        gather_fns["aave"] = _aave.drip_all(address, private_key)
+        gather_fns["aave"] = _aave.drip_all(
+            address, private_key, nonce_manager=sepolia_nonces
+        )
     if do_compound:
-        gather_fns["compound"] = _compound.drip_all(address, private_key)
+        gather_fns["compound"] = _compound.drip_all(
+            address, private_key, nonce_manager=sepolia_nonces
+        )
 
     results = dict(zip(gather_fns, await asyncio.gather(*gather_fns.values())))
 
