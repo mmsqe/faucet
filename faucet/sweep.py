@@ -138,8 +138,11 @@ async def _sweep_chain(
             gas_price_eff = gas_params.get(
                 "maxFeePerGas", gas_params.get("gasPrice", 0)
             )
-            # 20% buffer so base-fee fluctuations don't cause "insufficient funds"
-            native_gas_cost = gas_price_eff * gas_limit * 2
+            # 3x buffer: covers base-fee fluctuations between estimate and
+            # broadcast, plus OP-stack L1 data fees that `estimate_gas` omits
+            # but the node still debits at execution (seen on soneium-minato,
+            # where a 2x reserve missed by ~6 gwei).
+            native_gas_cost = gas_price_eff * gas_limit * 3
 
             # Reserve ERC-20 gas if this chain has a USDC contract
             from faucet.circle import USDC_CONTRACTS
