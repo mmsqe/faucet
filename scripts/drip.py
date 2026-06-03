@@ -11,6 +11,7 @@ from web3 import AsyncWeb3
 
 from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
 from faucet import aave as _aave
+from faucet import babylon as _babylon
 from faucet import chainstack as _chainstack
 from faucet import compound as _compound
 from faucet.nonce import NonceManager
@@ -27,6 +28,8 @@ if not address:
 
 private_key = os.environ.get("TESTNET_PRIVATE_KEY", "")
 sweep_to = os.environ.get("SWEEP_TO_ADDRESS", "")
+# Babylon signet BTC address (taproot/P2TR); BTC drip is skipped when unset.
+babylon_btc_address = os.environ.get("BABYLON_BTC_ADDRESS", "")
 
 _ALL_NATIVE_CHAINS: list[str] = sorted(
     set(CHAINS.keys()) | (_chainstack.CHAINS - set(CHAINS.keys()))
@@ -62,12 +65,30 @@ async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
             await asyncio.sleep(_CIRCLE_GAP_SECONDS)
 
 
+async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
+    """Drip Babylon TBV assets one at a time (shared rate-limited faucet):
+    EVM tokens to ``address``, then signet BTC if ``BABYLON_BTC_ADDRESS`` is set."""
+    out: list[tuple[str, str | None, str | None]] = []
+    for token in sorted(_babylon.EVM_TOKENS):
+        try:
+            out.append((token, await _babylon.drip(address, token), None))
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            out.append((token, None, repr(exc)))
+    if babylon_btc_address:
+        try:
+            out.append(("BTC", await _babylon.drip_btc(babylon_btc_address), None))
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            out.append(("BTC", None, repr(exc)))
+    return out
+
+
 async def main() -> None:
     # Skip native drip in CI: runner IPs lose Cloudflare Turnstile.
     do_native = not os.environ.get("CI")
     do_usdc = True
     do_aave = bool(private_key)
     do_compound = True
+    do_bb = not os.environ.get("CI")
     parts = []
     if do_native:
         parts.append(f"{len(_ALL_NATIVE_CHAINS)} native chains")
@@ -77,6 +98,9 @@ async def main() -> None:
         parts.append(f"{len(_aave.TOKENS)} Aave tokens")
     if do_compound:
         parts.append(f"{len(_compound.TOKENS)} Compound tokens")
+    if do_bb:
+        bb_count = len(_babylon.EVM_TOKENS) + (1 if babylon_btc_address else 0)
+        parts.append(f"{bb_count} Babylon TBV assets")
     print(f"Funding {address} on {', '.join(parts)}\n")
 
     gather_fns: dict[str, Any] = {}
@@ -102,6 +126,8 @@ async def main() -> None:
         gather_fns["compound"] = _compound.drip_all(
             address, private_key, nonce_manager=sepolia_nonces
         )
+    if do_bb:
+        gather_fns["babylon"] = _drip_babylon()
 
     results = dict(zip(gather_fns, await asyncio.gather(*gather_fns.values())))
 
@@ -138,6 +164,15 @@ async def main() -> None:
                 print(f"  {token}: ERROR — {err}")
             else:
                 print(f"  {token}: tx={tx_hash}")
+
+    babylon_result: list = results.get("babylon", [])
+    if babylon_result:
+        print("\nBabylon TBV (Sepolia + signet):")
+        for token, tx, err in babylon_result:
+            if err:
+                print(f"  {token}: ERROR — {err}")
+            else:
+                print(f"  {token}: tx={tx}")
 
 
 async def _sweep() -> None:
