@@ -33,7 +33,9 @@ from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.types import TxParams
 
+from faucet.aave import _DECIMALS as _AAVE_DECIMALS
 from faucet.aave import TOKENS as _AAVE_TOKENS
+from faucet.circle import USDC_CONTRACTS
 from faucet.compound import DECIMALS as _COMPOUND_DECIMALS
 from faucet.compound import TOKENS as _COMPOUND_TOKENS
 from faucet.rpc import EVM_CHAINS
@@ -145,8 +147,6 @@ async def _sweep_chain(
             native_gas_cost = gas_price_eff * gas_limit * 3
 
             # Reserve ERC-20 gas if this chain has a USDC contract
-            from faucet.circle import USDC_CONTRACTS
-
             usdc_reserve = 0
             if USDC_CONTRACTS.get(chain):
                 erc20_gas_params = await _build_tx_params(w3, _ERC20_GAS_LIMIT)
@@ -218,6 +218,14 @@ async def _sweep_chain(
             )
         except Exception as exc:
             print(f"  [{chain}] Compound error: {exc}")
+
+        # ── Aave V3 testnet tokens ─────────────────────────────────────────
+        try:
+            results.extend(
+                await _sweep_aave(chain, w3, sender, checksum_to, account, symbol)
+            )
+        except Exception as exc:
+            print(f"  [{chain}] Aave error: {exc}")
     finally:
         try:
             await asyncio.wait_for(provider.disconnect(), timeout=5)
@@ -234,8 +242,6 @@ async def _sweep_usdc(
     account,
     native_symbol: str,
 ) -> list[SweepResult]:
-    from faucet.circle import USDC_CONTRACTS
-
     results: list[SweepResult] = []
     usdc_address = USDC_CONTRACTS.get(chain)
     if not usdc_address:
@@ -318,9 +324,91 @@ async def _sweep_compound(
     if chain not in _COMPOUND_GAS_RESERVE:
         return results
 
+    # Compound's Fauceteer drips USDC from the same contract Circle uses on
+    # Ethereum Sepolia; _sweep_usdc already drained it, so skip here.
+    circle_usdc = (USDC_CONTRACTS.get(chain) or "").lower()
     chain_id = await w3.eth.chain_id
     for symbol, token_address in _COMPOUND_TOKENS.items():
+        if token_address.lower() == circle_usdc:
+            continue
         decimals = _COMPOUND_DECIMALS[symbol]
+        token = w3.eth.contract(
+            address=AsyncWeb3.to_checksum_address(token_address),
+            abi=_ERC20_TRANSFER_ABI,
+        )
+        balance = await token.functions.balanceOf(sender).call()
+        print(f"  [{chain}] {symbol} before: {balance / 10**decimals:.6f}")
+        if balance == 0:
+            print(f"  [{chain}] {symbol} skip: zero balance")
+            continue
+
+        native_now = await w3.eth.get_balance(sender)
+        gas_params = await _build_tx_params(w3, _ERC20_GAS_LIMIT)
+        gas_price_eff = gas_params.get("maxFeePerGas", gas_params.get("gasPrice", 0))
+        gas_cost = gas_price_eff * _ERC20_GAS_LIMIT * 2
+        if native_now < gas_cost:
+            print(
+                f"  [{chain}] {symbol} skip: insufficient {native_symbol} for gas "
+                f"({native_now / 10**18:.8f} < {gas_cost / 10**18:.8f})"
+            )
+            continue
+
+        nonce = await w3.eth.get_transaction_count(sender)
+        tx: TxParams = await token.functions.transfer(
+            checksum_to, balance
+        ).build_transaction(
+            cast(
+                TxParams,
+                {
+                    "from": sender,
+                    "nonce": nonce,
+                    "chainId": chain_id,
+                    **gas_params,
+                },
+            )
+        )
+        signed = account.sign_transaction(tx)
+        tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        status = "ok" if receipt["status"] == 1 else "FAILED"
+        balance_after = await token.functions.balanceOf(sender).call()
+        print(
+            f"  [{chain}] {symbol} sent {balance / 10**decimals:.6f} → {checksum_to}"
+            f"  tx={tx_hash.hex()}  {status}"
+        )
+        print(f"  [{chain}] {symbol} after:  {balance_after / 10**decimals:.6f}")
+        results.append(
+            SweepResult(
+                chain=chain,
+                token=symbol,
+                tx_hash=tx_hash.hex(),
+                value=balance,
+                decimals=decimals,
+            )
+        )
+    return results
+
+
+async def _sweep_aave(
+    chain: str,
+    w3: AsyncWeb3,
+    sender: ChecksumAddress,
+    checksum_to: ChecksumAddress,
+    account,
+    native_symbol: str,
+) -> list[SweepResult]:
+    """Sweep Aave V3 testnet ERC-20s — Ethereum Sepolia only.
+
+    Transfers the full balance of each Aave-minted token (DAI, USDC, USDT,
+    WBTC, LINK, AAVE) one tx at a time, skipping tokens with a zero balance.
+    """
+    results: list[SweepResult] = []
+    if chain not in _AAVE_GAS_RESERVE:
+        return results
+
+    chain_id = await w3.eth.chain_id
+    for symbol, token_address in _AAVE_TOKENS.items():
+        decimals = _AAVE_DECIMALS[symbol]
         token = w3.eth.contract(
             address=AsyncWeb3.to_checksum_address(token_address),
             abi=_ERC20_TRANSFER_ABI,
