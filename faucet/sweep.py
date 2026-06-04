@@ -56,6 +56,21 @@ _COMPOUND_GAS_RESERVE: dict[str, int] = {
     "ethereum-sepolia": len(_COMPOUND_TOKENS) * _ERC20_GAS_LIMIT
 }
 
+# OP-stack L1 data fee oracle. estimate_gas omits this fee; the sequencer
+# still debits it, so without reserving it the broadcast fails with
+# "insufficient funds for gas * price + value" (seen on soneium-minato).
+_OP_GAS_PRICE_ORACLE = "0x420000000000000000000000000000000000000F"
+_OP_GAS_PRICE_ORACLE_ABI = [
+    {
+        "inputs": [{"name": "_data", "type": "bytes"}],
+        "name": "getL1Fee",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+
 _ERC20_TRANSFER_ABI = [
     {
         "inputs": [
@@ -103,6 +118,40 @@ async def _build_tx_params(w3: AsyncWeb3, gas_limit: int) -> dict:
         }
     gas_price = await w3.eth.gas_price
     return {"gas": gas_limit, "gasPrice": gas_price}
+
+
+async def _op_stack_l1_fee(
+    w3: AsyncWeb3,
+    account,
+    to: ChecksumAddress,
+    value: int,
+    chain_id: int,
+    gas_params: dict,
+) -> int:
+    """Return the OP-stack L1 data fee for a sweep tx, or 0 if not OP-stack.
+
+    Uses a placeholder ``nonce=0`` over the actual ``value`` so the signed RLP
+    size handed to ``getL1Fee`` is within a few bytes of the broadcast tx;
+    ``value`` should be an upper bound (e.g. the wallet's full balance) so the
+    returned fee covers the slightly-smaller real broadcast.
+    """
+    tx = {
+        "to": to,
+        "value": value,
+        "nonce": 0,
+        "chainId": chain_id,
+        **gas_params,
+    }
+    signed = account.sign_transaction(tx)
+    oracle = w3.eth.contract(
+        address=AsyncWeb3.to_checksum_address(_OP_GAS_PRICE_ORACLE),
+        abi=_OP_GAS_PRICE_ORACLE_ABI,
+    )
+    try:
+        return await oracle.functions.getL1Fee(signed.raw_transaction).call()
+    except Exception:
+        # No GasPriceOracle predeploy at this address — not an OP-stack chain.
+        return 0
 
 
 async def _sweep_chain(
@@ -173,8 +222,20 @@ async def _sweep_chain(
                 )
                 compound_reserve = compound_price_eff * compound_gas * 2
 
+            # OP-stack L1 data fee: the sequencer debits this on top of L2 gas
+            # at execution; ``estimate_gas`` doesn't include it. Pass full
+            # balance as the placeholder value to upper-bound the RLP size.
+            chain_id = await w3.eth.chain_id
+            l1_fee_reserve = await _op_stack_l1_fee(
+                w3, account, checksum_to, balance_before, chain_id, gas_params
+            )
+
             total_reserve = (
-                native_gas_cost + usdc_reserve + aave_reserve + compound_reserve
+                native_gas_cost
+                + usdc_reserve
+                + aave_reserve
+                + compound_reserve
+                + l1_fee_reserve
             )
             if balance_before <= total_reserve:
                 print(f"  [{chain}] {symbol} skip: balance below gas cost")
@@ -185,7 +246,7 @@ async def _sweep_chain(
                     "to": checksum_to,
                     "value": value,
                     "nonce": nonce,
-                    "chainId": await w3.eth.chain_id,
+                    "chainId": chain_id,
                     **gas_params,
                 }
                 signed = account.sign_transaction(tx)
