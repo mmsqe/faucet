@@ -29,7 +29,6 @@ CHAINS: dict[str, str] = {
     "base-sepolia": "https://www.alchemy.com/faucets/base-sepolia",
     "polygon-amoy": "https://www.alchemy.com/faucets/polygon-amoy",
     "zksync-sepolia": "https://www.alchemy.com/faucets/zksync-sepolia",
-    "starknet-sepolia": "https://www.alchemy.com/faucets/starknet-sepolia",
     "worldchain-sepolia": "https://www.alchemy.com/faucets/worldchain-sepolia",
     "monad-testnet": "https://www.alchemy.com/faucets/monad-testnet",
     "shape-sepolia": "https://www.alchemy.com/faucets/shape-sepolia",
@@ -39,7 +38,6 @@ CHAINS: dict[str, str] = {
     "crossfi-testnet": "https://www.alchemy.com/faucets/crossfi-testnet",
     "gensyn-testnet": "https://www.alchemy.com/faucets/gensyn-testnet",
     "humanity-testnet": "https://www.alchemy.com/faucets/humanity-testnet",
-    "syndicate-risa": "https://www.alchemy.com/faucets/syndicate-risa",
     "worldl3-devnet": "https://www.alchemy.com/faucets/worldl3-devnet",
     "stable-testnet": "https://www.alchemy.com/faucets/stable-testnet",
 }
