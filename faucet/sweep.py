@@ -41,19 +41,27 @@ from faucet.compound import TOKENS as _COMPOUND_TOKENS
 from faucet.rpc import EVM_CHAINS
 
 _ERC20_GAS_LIMIT = 100_000
+# USDC sweep cycles of native gas to reserve. CI runs daily and skips the
+# native drip; local runs refill native ~monthly.
+_USDC_SWEEP_CYCLES = 30
 # Ethereum Sepolia does the most work per chain (native + USDC + Compound
 # sweeps), so give the per-chain watchdog more headroom.
 _CHAIN_TIMEOUT = 120.0
 _RPC_REQUEST_TIMEOUT = 10
 
-# On Ethereum Sepolia, leave gas behind for the next Aave faucet run, which
-# mints each supported token via on-chain calls (~150k gas each) from this key.
-_AAVE_GAS_RESERVE: dict[str, int] = {"ethereum-sepolia": len(_AAVE_TOKENS) * 150_000}
+# On Ethereum Sepolia, leave gas behind for both the post-mint Aave sweep
+# (this cycle: one ERC-20 transfer per token) AND the next Aave faucet run
+# (which mints each supported token via on-chain calls, ~150k gas each).
+# Without the sweep half, freshly-minted tokens get stuck because mint cost
+# eats the reserve before _sweep_aave runs.
+_AAVE_GAS_RESERVE: dict[str, int] = {
+    "ethereum-sepolia": len(_AAVE_TOKENS) * (150_000 + _ERC20_GAS_LIMIT)
+}
 
-# On Ethereum Sepolia, reserve gas for the Compound III token sweep — one
-# ERC-20 transfer per token, run after the native sweep drains the balance.
+# Same shape for Compound III: reserve covers both the post-drip sweep (one
+# ERC-20 transfer per token) and the next Fauceteer drip cycle.
 _COMPOUND_GAS_RESERVE: dict[str, int] = {
-    "ethereum-sepolia": len(_COMPOUND_TOKENS) * _ERC20_GAS_LIMIT
+    "ethereum-sepolia": len(_COMPOUND_TOKENS) * (_ERC20_GAS_LIMIT + _ERC20_GAS_LIMIT)
 }
 
 # OP-stack L1 data fee oracle. estimate_gas omits this fee; the sequencer
@@ -195,14 +203,15 @@ async def _sweep_chain(
             # where a 2x reserve missed by ~6 gwei).
             native_gas_cost = gas_price_eff * gas_limit * 3
 
-            # Reserve ERC-20 gas if this chain has a USDC contract
+            # Reserve native gas to sweep USDC for _USDC_SWEEP_CYCLES runs;
+            # see that constant for why it's not just 1.
             usdc_reserve = 0
             if USDC_CONTRACTS.get(chain):
                 erc20_gas_params = await _build_tx_params(w3, _ERC20_GAS_LIMIT)
                 erc20_price_eff = erc20_gas_params.get(
                     "maxFeePerGas", erc20_gas_params.get("gasPrice", 0)
                 )
-                usdc_reserve = erc20_price_eff * _ERC20_GAS_LIMIT * 2
+                usdc_reserve = erc20_price_eff * _ERC20_GAS_LIMIT * _USDC_SWEEP_CYCLES
 
             aave_reserve = 0
             aave_gas = _AAVE_GAS_RESERVE.get(chain)
