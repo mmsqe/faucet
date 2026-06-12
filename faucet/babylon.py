@@ -150,6 +150,14 @@ async def _poll(action, ok, *, timeout: float, on_timeout):
         await asyncio.sleep(_POLL_INTERVAL)
 
 
+async def _submit_and_check(page):
+    raw = await page.evaluate("window.__faucetResult")
+    if raw:
+        return raw
+    await _call_js(page, _CLICK_SUBMIT)
+    return await page.evaluate("window.__faucetResult")
+
+
 async def _drip(
     recipient: str,
     token: str | None,
@@ -189,17 +197,8 @@ async def _drip(
         await _call_js(page, _SET_INPUT, 'input[placeholder="0.00"]', str(amount))
         await asyncio.sleep(1)
 
-        # Click submit once it enables (Turnstile may arm a little late).
-        await _poll(
-            lambda: _call_js(page, _CLICK_SUBMIT),
-            lambda state: state == "clicked",
-            timeout=timeout,
-            on_timeout=lambda state: (
-                f"Babylon: submit stayed {state!r} for {timeout:.0f}s (captcha/rate limit?)"
-            ),
-        )
         raw = await _poll(
-            lambda: page.evaluate("window.__faucetResult"),
+            lambda: _submit_and_check(page),
             bool,
             timeout=timeout,
             on_timeout=lambda _: (
