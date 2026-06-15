@@ -108,3 +108,45 @@ EVM_CHAINS: dict[str, tuple[str, bool, str]] = {
     # second faucet path via Chainstack); existing zksync-sepolia entry sweeps
     # both balances.
 }
+
+
+#: Keyless public RPCs for URLs exposed client-side — e.g. injected into the
+#: third-party Chainlink faucet page by its wallet shim, where a credential must
+#: not leak. Pins a keyless endpoint for chains that would otherwise resolve to
+#: an Infura URL (ethereum/base/optimism-sepolia) or a flakier official one
+#: (arbitrum, polygon). Chains absent here (e.g. avalanche-fuji) fall through to
+#: the already-keyless :data:`EVM_CHAINS` value. ``slug -> (env_var, fallback)``.
+_KEYLESS_RPC: dict[str, tuple[str, str]] = {
+    "ethereum-sepolia": (
+        "SEPOLIA_RPC_URL",
+        "https://ethereum-sepolia-rpc.publicnode.com",
+    ),
+    "arbitrum-sepolia": (
+        "ARBITRUM_SEPOLIA_RPC_URL",
+        "https://arbitrum-sepolia-rpc.publicnode.com",
+    ),
+    "base-sepolia": ("BASE_SEPOLIA_RPC_URL", "https://base-sepolia-rpc.publicnode.com"),
+    "optimism-sepolia": (
+        "OP_SEPOLIA_RPC_URL",
+        "https://optimism-sepolia-rpc.publicnode.com",
+    ),
+    "polygon-amoy": (
+        "POLYGON_AMOY_RPC_URL",
+        "https://polygon-amoy-bor-rpc.publicnode.com",
+    ),
+}
+
+
+def public_rpc(slug: str) -> str:
+    """Keyless RPC for *slug* — never an Infura URL, so it is safe to expose
+    client-side. Honors the per-chain ``*_RPC_URL`` env override, else a public
+    keyless endpoint. Falls back to :data:`EVM_CHAINS` for chains with no Infura
+    mapping (already keyless). Raises ``KeyError`` for an unknown slug."""
+    spec = _KEYLESS_RPC.get(slug)
+    if spec is not None:
+        env_var, fallback = spec
+        return os.environ.get(env_var, fallback)
+    entry = EVM_CHAINS.get(slug)
+    if entry is None:
+        raise KeyError(f"no RPC configured for chain {slug!r}")
+    return entry[0]

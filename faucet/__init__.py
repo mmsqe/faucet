@@ -9,16 +9,24 @@ USDC / EURC (:func:`drip_usdc`)
     Circle faucet (https://faucet.circle.com/).  Drips 20 testnet tokens.
     Rate-limited to one request per (address, chain, token) every 2 hours.
 
+LINK (:func:`drip_link_all`)
+    Chainlink faucet (https://faucets.chain.link/).  Drips canonical LINK across
+    chains in one browser.  Wallet-connect only, so it injects a wallet for the
+    target address; claiming requires a signature, so a private key is needed.
+
 Quick start::
 
     import asyncio
-    from faucet import drip, drip_usdc
+    from faucet import drip, drip_usdc, drip_link_all
 
     # Native ETH on OP Sepolia
     tx = asyncio.run(drip("0xYourAddress", "optimism-sepolia"))
 
     # USDC on Base Sepolia
     asyncio.run(drip_usdc("0xYourAddress", "base-sepolia"))
+
+    # LINK on all chains (or a subset)
+    asyncio.run(drip_link_all("0xYourAddress", private_key="0x..."))
 """
 
 from __future__ import annotations
@@ -36,6 +44,9 @@ from faucet.alchemy import (
     RateLimitError,
 )
 from faucet.alchemy import drip as _alchemy_drip
+from faucet.chainlink import CHAINS as LINK_CHAINS
+from faucet.chainlink import LINK_CONTRACTS
+from faucet.chainlink import drip as drip_link_all
 from faucet.circle import CHAINS as USDC_CHAINS
 from faucet.circle import USDC_CONTRACTS
 from faucet.circle import drip as drip_usdc
@@ -138,11 +149,14 @@ __all__ = [
     "CHAINS",
     "USDC_CHAINS",
     "USDC_CONTRACTS",
+    "LINK_CHAINS",
+    "LINK_CONTRACTS",
     "FaucetError",
     "InsufficientFaucetBalanceError",
     "RateLimitError",
     "drip",
     "drip_usdc",
+    "drip_link_all",
     "is_contract_deployed",
     "is_chain_synced",
     "sweep",

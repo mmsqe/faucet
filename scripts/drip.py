@@ -9,7 +9,7 @@ from typing import Any
 
 from web3 import AsyncWeb3
 
-from faucet import CHAINS, USDC_CHAINS, drip, drip_usdc
+from faucet import CHAINS, LINK_CHAINS, USDC_CHAINS, drip, drip_link_all, drip_usdc
 from faucet import aave as _aave
 from faucet import babylon as _babylon
 from faucet import chainstack as _chainstack
@@ -38,6 +38,8 @@ _ALL_NATIVE_CHAINS: list[str] = sorted(
 # Circle USDC faucet only supports EVM chains (no solana-devnet etc.)
 _USDC_EVM_CHAINS: list[str] = [c for c in USDC_CHAINS if not c.startswith("solana")]
 
+_LINK_CHAINS: list[str] = list(LINK_CHAINS)
+
 _sem = asyncio.Semaphore(3)
 # Circle's faucet (faucet.circle.com) is fronted by Cloudflare and 1015's
 # the runner IP when hit in parallel. Serialize Circle drips with a delay.
@@ -65,6 +67,16 @@ async def _drip_usdc_chain(chain: str) -> tuple[str, str | None]:
             await asyncio.sleep(_CIRCLE_GAP_SECONDS)
 
 
+async def _drip_link_all() -> list[tuple[str, str | None, str | None]]:
+    """Drip LINK across all chains in one browser: every faucet page shares the
+    host faucets.chain.link, so the first chain's Cloudflare clearance carries to
+    the rest — one Chrome, one captcha — instead of a fresh browser + captcha per
+    chain. The redesigned faucet requires a claim signature, so the private key
+    (matching ``address``) is required. Returns ``(chain, tx, err)`` rows."""
+    res = await drip_link_all(address, _LINK_CHAINS, private_key=private_key)
+    return [(chain, tx, err) for chain, (tx, err) in res.items()]
+
+
 async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
     """Drip Babylon TBV assets one at a time (shared rate-limited faucet):
     EVM tokens to ``address``, then signet BTC if ``BABYLON_BTC_ADDRESS`` is set."""
@@ -89,11 +101,14 @@ async def main() -> None:
     do_aave = bool(private_key)
     do_compound = True
     do_bb = not os.environ.get("CI")
+    do_link = not os.environ.get("CI")
     parts = []
     if do_native:
         parts.append(f"{len(_ALL_NATIVE_CHAINS)} native chains")
     if do_usdc:
         parts.append(f"{len(_USDC_EVM_CHAINS)} USDC chains")
+    if do_link:
+        parts.append(f"{len(_LINK_CHAINS)} LINK chains")
     if do_aave:
         parts.append(f"{len(_aave.TOKENS)} Aave tokens")
     if do_compound:
@@ -112,6 +127,8 @@ async def main() -> None:
         gather_fns["usdc"] = asyncio.gather(
             *[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]
         )
+    if do_link:
+        gather_fns["link"] = _drip_link_all()
     # Aave and Compound both mint on Ethereum Sepolia from the same key; share
     # one nonce manager so their concurrent transactions never reuse a nonce.
     sepolia_nonces: NonceManager | None = None
@@ -146,6 +163,14 @@ async def main() -> None:
                 print(f"  {chain}: ERROR — {err}")
             else:
                 print(f"  {chain}: ok")
+
+    if do_link:
+        print("\nLINK:")
+        for chain, tx, err in results["link"]:
+            if err:
+                print(f"  {chain}: ERROR — {err}")
+            else:
+                print(f"  {chain}: tx={tx}")
 
     aave_result: dict = results.get("aave", {})
     if aave_result:

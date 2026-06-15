@@ -20,29 +20,35 @@ import aiohttp
 # Chain registry — all chains supported by https://www.alchemy.com/faucets
 # ---------------------------------------------------------------------------
 
-#: Mapping of Alchemy chain slug → faucet page URL.
-#: Keys are the ``chainId`` values accepted by the faucet API.
-CHAINS: dict[str, str] = {
-    "ethereum-sepolia": "https://www.alchemy.com/faucets/ethereum-sepolia",
-    "arbitrum-sepolia": "https://www.alchemy.com/faucets/arbitrum-sepolia",
-    "optimism-sepolia": "https://www.alchemy.com/faucets/optimism-sepolia",
-    "base-sepolia": "https://www.alchemy.com/faucets/base-sepolia",
-    "polygon-amoy": "https://www.alchemy.com/faucets/polygon-amoy",
-    "zksync-sepolia": "https://www.alchemy.com/faucets/zksync-sepolia",
-    "worldchain-sepolia": "https://www.alchemy.com/faucets/worldchain-sepolia",
-    "monad-testnet": "https://www.alchemy.com/faucets/monad-testnet",
-    "shape-sepolia": "https://www.alchemy.com/faucets/shape-sepolia",
-    "lens-sepolia": "https://www.alchemy.com/faucets/lens-sepolia",
-    "abstract-testnet": "https://www.alchemy.com/faucets/abstract-testnet",
-    "soneium-minato": "https://www.alchemy.com/faucets/soneium-minato",
-    "crossfi-testnet": "https://www.alchemy.com/faucets/crossfi-testnet",
-    "gensyn-testnet": "https://www.alchemy.com/faucets/gensyn-testnet",
-    "humanity-testnet": "https://www.alchemy.com/faucets/humanity-testnet",
-    "worldl3-devnet": "https://www.alchemy.com/faucets/worldl3-devnet",
-    "stable-testnet": "https://www.alchemy.com/faucets/stable-testnet",
-}
+_ALCHEMY_HOST = "https://www.alchemy.com"
+_FAUCET_PAGE_URL_TEMPLATE = _ALCHEMY_HOST + "/faucets/{slug}"
+_FAUCET_API_URL_TEMPLATE = _ALCHEMY_HOST + "/api/faucets/{slug}/send"
 
-_FAUCET_API_URL_TEMPLATE = "https://www.alchemy.com/api/faucets/{slug}/send"
+#: Alchemy faucet slugs — the ``chainId`` values accepted by the faucet API.
+_SLUGS = (
+    "ethereum-sepolia",
+    "arbitrum-sepolia",
+    "optimism-sepolia",
+    "base-sepolia",
+    "polygon-amoy",
+    "zksync-sepolia",
+    "worldchain-sepolia",
+    "monad-testnet",
+    "shape-sepolia",
+    "lens-sepolia",
+    "abstract-testnet",
+    "soneium-minato",
+    "crossfi-testnet",
+    "gensyn-testnet",
+    "humanity-testnet",
+    "worldl3-devnet",
+    "stable-testnet",
+)
+
+#: Mapping of Alchemy chain slug → faucet page URL.
+CHAINS: dict[str, str] = {
+    slug: _FAUCET_PAGE_URL_TEMPLATE.format(slug=slug) for slug in _SLUGS
+}
 
 # ---------------------------------------------------------------------------
 # Exceptions
