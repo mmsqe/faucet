@@ -29,7 +29,6 @@ results = asyncio.run(sweep(private_key, to_address))
 if results:
     print(f"\nSwept across {len(results)} chain(s):")
     for r in results:
-        decimals = 6 if r.token == "USDC" else 18
-        print(f"  {r.chain}: {r.value / 10**decimals:.6f} {r.token}  tx={r.tx_hash}")
+        print(f"  {r.chain}: {r.value / 10**r.decimals:.6f} {r.token}  tx={r.tx_hash}")
 else:
     print("\nNothing to sweep.")

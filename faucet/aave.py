@@ -15,16 +15,10 @@ this resolves automatically over time.
 
 from __future__ import annotations
 
-import asyncio
-import logging
-
-from web3 import AsyncWeb3
-
+from faucet import _erc20
 from faucet.alchemy import FaucetError
 from faucet.nonce import NonceManager
 from faucet.rpc import SEPOLIA_RPC_URL
-
-log = logging.getLogger(__name__)
 
 _FAUCET_ADDRESS = "0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D"
 
@@ -90,79 +84,24 @@ async def drip_all(
     rpc_url: str = SEPOLIA_RPC_URL,
     nonce_manager: NonceManager | None = None,
 ) -> dict[str, tuple[str | None, str | None]]:
-    """Mint multiple Aave V3 testnet tokens to *address* on Ethereum Sepolia.
+    """Mint Aave V3 testnet *tokens* (default: all) to *address* on Ethereum Sepolia.
 
-    Sends all transactions sequentially from the same key so nonces never
-    collide, then waits for all receipts in parallel.
-
-    Args:
-        address: Wallet address to receive tokens.
-        private_key: Private key of the wallet paying for gas.
-        tokens: Token symbols to mint. Defaults to all supported tokens.
-        rpc_url: Ethereum Sepolia RPC endpoint.
-        nonce_manager: Shared nonce source. Pass the same instance here and to
-            :func:`faucet.compound.drip_all` when running both concurrently
-            from one key, so their transactions do not reuse a nonce. Defaults
-            to a private manager scoped to this call.
-
-    Returns:
-        ``{token: (tx_hash, None)}`` on success or ``{token: (None, error)}``
-        on failure, for each requested token.
+    Pass a shared *nonce_manager* — the same instance given to
+    :func:`faucet.compound.drip_all` — when minting from one key concurrently so
+    the two never reuse a nonce. Returns ``{token: (tx_hash, None)}`` on success
+    or ``{token: (None, error)}`` per requested token.
     """
-    want = [t.upper() for t in (tokens or list(TOKENS))]
-    unknown = [t for t in want if t not in TOKENS]
-    if unknown:
-        raise ValueError(f"unknown token(s): {unknown}. Supported: {sorted(TOKENS)}")
-
-    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
-    account = w3.eth.account.from_key(private_key)
-    to = AsyncWeb3.to_checksum_address(address)
-    faucet = w3.eth.contract(
-        address=AsyncWeb3.to_checksum_address(_FAUCET_ADDRESS),
-        abi=_FAUCET_ABI,
+    return await _erc20.drip_all(
+        address,
+        private_key,
+        tokens,
+        rpc_url=rpc_url,
+        nonce_manager=nonce_manager,
+        token_addresses=TOKENS,
+        contract_address=_FAUCET_ADDRESS,
+        contract_abi=_FAUCET_ABI,
+        make_call=lambda faucet, token, token_addr, to: faucet.functions.mint(
+            token_addr, to, _MINT_AMOUNT[token]
+        ),
+        log_verb="minting",
     )
-    nonces = nonce_manager or NonceManager(w3, account.address)
-    log.info("minting %d token(s) from %s", len(want), account.address)
-    sent: dict[str, str] = {}
-    errors: dict[str, str] = {}
-
-    for token in want:
-        token_addr = AsyncWeb3.to_checksum_address(TOKENS[token])
-        try:
-            async with nonces.reserve() as nonce:
-                tx = await faucet.functions.mint(
-                    token_addr, to, _MINT_AMOUNT[token]
-                ).build_transaction({"from": account.address, "nonce": nonce})
-                signed = account.sign_transaction(tx)
-                tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
-                log.info("%s sent  tx=%s (nonce=%d)", token, tx_hash.hex(), nonce)
-                sent[token] = tx_hash.hex()
-        except Exception as exc:
-            log.warning("%s send failed: %r", token, exc)
-            errors[token] = repr(exc)
-
-    async def _wait(token: str, tx_hash: str) -> tuple[str, str | None, str | None]:
-        log.debug("%s waiting for receipt tx=%s", token, tx_hash)
-        try:
-            receipt = await w3.eth.wait_for_transaction_receipt(
-                tx_hash,
-                timeout=120,
-                poll_latency=5,
-            )
-            if receipt["status"] != 1:
-                log.warning("%s reverted tx=%s", token, tx_hash)
-                return token, None, f"reverted (tx={tx_hash})"
-            log.info("%s confirmed block=%s", token, receipt["blockNumber"])
-            return token, tx_hash, None
-        except Exception as exc:
-            log.warning("%s receipt error: %r", token, exc)
-            return token, None, repr(exc)
-
-    receipts = await asyncio.gather(*[_wait(t, h) for t, h in sent.items()])
-
-    result: dict[str, tuple[str | None, str | None]] = {}
-    for token, tx_hash, err in receipts:
-        result[token] = (tx_hash, err)
-    for token, err in errors.items():
-        result[token] = (None, err)
-    return result
