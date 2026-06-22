@@ -5,7 +5,6 @@ import gc
 import logging
 import os
 import sys
-from typing import Any
 
 from web3 import AsyncWeb3
 
@@ -73,7 +72,10 @@ async def _drip_link_all() -> list[tuple[str, str | None, str | None]]:
     the rest — one Chrome, one captcha — instead of a fresh browser + captcha per
     chain. The redesigned faucet requires a claim signature, so the private key
     (matching ``address``) is required. Returns ``(chain, tx, err)`` rows."""
-    res = await drip_link_all(address, _LINK_CHAINS, private_key=private_key)
+    try:
+        res = await drip_link_all(address, _LINK_CHAINS, private_key=private_key)
+    except Exception as exc:  # noqa: BLE001 — keep the other faucets running
+        return [(chain, None, repr(exc)) for chain in _LINK_CHAINS]
     return [(chain, tx, err) for chain, (tx, err) in res.items()]
 
 
@@ -92,6 +94,55 @@ async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
         except Exception as exc:  # noqa: BLE001 — report and continue
             out.append(("BTC", None, repr(exc)))
     return out
+
+
+async def _emit(coro, render) -> None:
+    """Await *coro*, then print ``render(result)`` as a single block the moment
+    it resolves — so a fast branch reports without waiting on the slow ones.
+    One print per section keeps concurrent branches from interleaving mid-block.
+    A falsy render result (empty branch) prints nothing."""
+    block = render(await coro)
+    if block:
+        print(f"\n{block}")
+
+
+def _render_native(rows) -> str:
+    lines = ["Native tokens:"]
+    for chain, tx, err in rows:
+        lines.append(f"  {chain}: ERROR — {err}" if err else f"  {chain}: tx={tx}")
+    return "\n".join(lines)
+
+
+def _render_usdc(rows) -> str:
+    lines = ["USDC:"]
+    for chain, err in rows:
+        lines.append(f"  {chain}: ERROR — {err}" if err else f"  {chain}: ok")
+    return "\n".join(lines)
+
+
+def _render_link(rows) -> str:
+    lines = ["LINK:"]
+    for chain, tx, err in rows:
+        lines.append(f"  {chain}: ERROR — {err}" if err else f"  {chain}: tx={tx}")
+    return "\n".join(lines)
+
+
+def _render_tokens(title: str, result: dict) -> str:
+    if not result:
+        return ""
+    lines = [f"{title}:"]
+    for token, (tx_hash, err) in result.items():
+        lines.append(f"  {token}: ERROR — {err}" if err else f"  {token}: tx={tx_hash}")
+    return "\n".join(lines)
+
+
+def _render_babylon(rows) -> str:
+    if not rows:
+        return ""
+    lines = ["Babylon TBV (Sepolia + signet):"]
+    for token, tx, err in rows:
+        lines.append(f"  {token}: ERROR — {err}" if err else f"  {token}: tx={tx}")
+    return "\n".join(lines)
 
 
 async def main() -> None:
@@ -118,17 +169,26 @@ async def main() -> None:
         parts.append(f"{bb_count} Babylon TBV assets")
     print(f"Funding {address} on {', '.join(parts)}\n")
 
-    gather_fns: dict[str, Any] = {}
+    # Each branch prints its own section the moment it finishes (see _emit), so
+    # fast branches (Aave/Compound, ~30s) report immediately instead of waiting
+    # on the slow browser branches (native/LINK/Babylon, several minutes).
+    tasks = []
     if do_native:
-        gather_fns["native"] = asyncio.gather(
-            *[_drip_native(c) for c in _ALL_NATIVE_CHAINS]
+        tasks.append(
+            _emit(
+                asyncio.gather(*[_drip_native(c) for c in _ALL_NATIVE_CHAINS]),
+                _render_native,
+            )
         )
     if do_usdc:
-        gather_fns["usdc"] = asyncio.gather(
-            *[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]
+        tasks.append(
+            _emit(
+                asyncio.gather(*[_drip_usdc_chain(c) for c in _USDC_EVM_CHAINS]),
+                _render_usdc,
+            )
         )
     if do_link:
-        gather_fns["link"] = _drip_link_all()
+        tasks.append(_emit(_drip_link_all(), _render_link))
     # Aave and Compound both mint on Ethereum Sepolia from the same key; share
     # one nonce manager so their concurrent transactions never reuse a nonce.
     sepolia_nonces: NonceManager | None = None
@@ -136,68 +196,23 @@ async def main() -> None:
         sepolia_w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(SEPOLIA_RPC_URL))
         sepolia_nonces = NonceManager(sepolia_w3, address)
     if do_aave:
-        gather_fns["aave"] = _aave.drip_all(
-            address, private_key, nonce_manager=sepolia_nonces
+        tasks.append(
+            _emit(
+                _aave.drip_all(address, private_key, nonce_manager=sepolia_nonces),
+                lambda r: _render_tokens("Aave (Ethereum Sepolia)", r),
+            )
         )
     if do_compound:
-        gather_fns["compound"] = _compound.drip_all(
-            address, private_key, nonce_manager=sepolia_nonces
+        tasks.append(
+            _emit(
+                _compound.drip_all(address, private_key, nonce_manager=sepolia_nonces),
+                lambda r: _render_tokens("Compound III (Ethereum Sepolia)", r),
+            )
         )
     if do_bb:
-        gather_fns["babylon"] = _drip_babylon()
+        tasks.append(_emit(_drip_babylon(), _render_babylon))
 
-    results = dict(zip(gather_fns, await asyncio.gather(*gather_fns.values())))
-
-    if do_native:
-        print("Native tokens:")
-        for chain, tx, err in results["native"]:
-            if err:
-                print(f"  {chain}: ERROR — {err}")
-            else:
-                print(f"  {chain}: tx={tx}")
-
-    if do_usdc:
-        print("\nUSDC:")
-        for chain, err in results["usdc"]:
-            if err:
-                print(f"  {chain}: ERROR — {err}")
-            else:
-                print(f"  {chain}: ok")
-
-    if do_link:
-        print("\nLINK:")
-        for chain, tx, err in results["link"]:
-            if err:
-                print(f"  {chain}: ERROR — {err}")
-            else:
-                print(f"  {chain}: tx={tx}")
-
-    aave_result: dict = results.get("aave", {})
-    if aave_result:
-        print("\nAave (Ethereum Sepolia):")
-        for token, (tx_hash, err) in aave_result.items():
-            if err:
-                print(f"  {token}: ERROR — {err}")
-            else:
-                print(f"  {token}: tx={tx_hash}")
-
-    compound_result: dict = results.get("compound", {})
-    if compound_result:
-        print("\nCompound III (Ethereum Sepolia):")
-        for token, (tx_hash, err) in compound_result.items():
-            if err:
-                print(f"  {token}: ERROR — {err}")
-            else:
-                print(f"  {token}: tx={tx_hash}")
-
-    babylon_result: list = results.get("babylon", [])
-    if babylon_result:
-        print("\nBabylon TBV (Sepolia + signet):")
-        for token, tx, err in babylon_result:
-            if err:
-                print(f"  {token}: ERROR — {err}")
-            else:
-                print(f"  {token}: tx={tx}")
+    await asyncio.gather(*tasks)
 
 
 async def _sweep() -> None:
