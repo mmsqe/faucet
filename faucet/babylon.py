@@ -23,7 +23,7 @@ from faucet.alchemy import (
     InsufficientFaucetBalanceError,
     RateLimitError,
     _ANTI_FINGERPRINT,
-    _wait_for_turnstile,
+    _click_turnstile_checkbox,
 )
 
 _PAGE_URL = "https://tbv-faucet.testnet.babylonlabs.io/"
@@ -143,25 +143,52 @@ async def _call_js(page, fn: str, *args):
     return await page.evaluate(f"({fn})({arglist})")
 
 
-async def _poll(action, ok, *, timeout: float, on_timeout):
-    """Call async *action* every :data:`_POLL_INTERVAL` until ``ok(result)``;
-    raise :class:`FaucetError` (``on_timeout(result)``) past *timeout*."""
-    deadline = asyncio.get_event_loop().time() + timeout
+async def _captcha_pending(page) -> bool:
+    """Whether the faucet is showing its "Please complete the CAPTCHA
+    verification" toast — i.e. the last Drip click was rejected for a missing
+    Turnstile token."""
+    try:
+        return bool(
+            await page.evaluate(
+                "(document.body.innerText || '').toLowerCase().includes('complete the captcha')"
+            )
+        )
+    except Exception:
+        return False
+
+
+async def _solve_and_submit(page, *, timeout: float) -> str:
+    """Click the Turnstile checkbox, submit, and re-solve+resubmit whenever the
+    captcha toast reappears, until the faucet API responds; raise past *timeout*.
+
+    Babylon keeps the Turnstile token in React state (no readable
+    ``cf-turnstile-response`` input) and validates it client-side, so we can't
+    poll a token. The checkbox iframe lives in a closed shadow root, so we click
+    it via :func:`_click_turnstile_checkbox` (CDP, ``pierce=True``) and treat the
+    absence of the captcha toast after a submit as success.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    solve_now = True  # solve before the first submit
+    submitted = False
     while True:
-        result = await action()
-        if ok(result):
-            return result
-        if asyncio.get_event_loop().time() > deadline:
-            raise FaucetError(on_timeout(result))
+        raw = await page.evaluate("window.__faucetResult")
+        if raw:
+            return raw
+        if solve_now:
+            await _click_turnstile_checkbox(page)
+            await asyncio.sleep(4)  # let Cloudflare verify the click
+            solve_now = False
+            submitted = False  # the new token warrants a fresh submit
+        if not submitted:
+            await _call_js(page, _CLICK_SUBMIT)
+            submitted = True
+        if loop.time() > deadline:
+            raise FaucetError(f"Babylon: no faucet API response within {timeout:.0f}s")
         await asyncio.sleep(_POLL_INTERVAL)
-
-
-async def _submit_and_check(page):
-    raw = await page.evaluate("window.__faucetResult")
-    if raw:
-        return raw
-    await _call_js(page, _CLICK_SUBMIT)
-    return await page.evaluate("window.__faucetResult")
+        # A captcha toast means the Drip click was rejected — re-solve and retry.
+        if await _captcha_pending(page):
+            solve_now = True
 
 
 async def _drip(
@@ -210,18 +237,11 @@ async def _drip(
         await _call_js(page, _SET_INPUT, 'input[placeholder="0.00"]', str(amount))
         await asyncio.sleep(1)
 
-        # Solve Turnstile (auto-clicks the checkbox if Cloudflare still escalates)
-        # so the Drip button enables without manual intervention.
-        await _wait_for_turnstile(page, timeout=min(timeout, 45.0))
-
-        raw = await _poll(
-            lambda: _submit_and_check(page),
-            bool,
-            timeout=timeout,
-            on_timeout=lambda _: (
-                f"Babylon: no faucet API response within {timeout:.0f}s"
-            ),
-        )
+        # Solve Turnstile and submit. Cloudflare escalates to the visible
+        # "Verify you are human" checkbox here, so click it (via CDP, which
+        # pierces its closed shadow root) before each Drip attempt and re-solve
+        # whenever the faucet's "complete the CAPTCHA" toast reappears.
+        raw = await _solve_and_submit(page, timeout=timeout)
         return _parse_response(raw)
     finally:
         browser.stop()

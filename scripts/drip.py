@@ -8,7 +8,15 @@ import sys
 
 from web3 import AsyncWeb3
 
-from faucet import CHAINS, LINK_CHAINS, USDC_CHAINS, drip, drip_link_all, drip_usdc
+from faucet import (
+    CHAINS,
+    LINK_CHAINS,
+    USDC_CHAINS,
+    RateLimitError,
+    drip,
+    drip_link_all,
+    drip_usdc,
+)
 from faucet import aave as _aave
 from faucet import babylon as _babylon
 from faucet import chainstack as _chainstack
@@ -81,11 +89,24 @@ async def _drip_link_all() -> list[tuple[str, str | None, str | None]]:
 
 async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
     """Drip Babylon TBV assets one at a time (shared rate-limited faucet):
-    EVM tokens to ``address``, then signet BTC if ``BABYLON_BTC_ADDRESS`` is set."""
+    EVM tokens to ``address``, then signet BTC if ``BABYLON_BTC_ADDRESS`` is set.
+
+    The faucet caps drips at 2/day/IP across the EVM tokens, so once one
+    rate-limits the rest will too — skip them (each would otherwise cost a fresh
+    browser launch + the full submit timeout) and go straight to the separate
+    signet-BTC faucet."""
     out: list[tuple[str, str | None, str | None]] = []
-    for token in sorted(_babylon.EVM_TOKENS):
+    tokens = sorted(_babylon.EVM_TOKENS)
+    for i, token in enumerate(tokens):
         try:
             out.append((token, await _babylon.drip(address, token), None))
+        except RateLimitError as exc:
+            out.append((token, None, repr(exc)))
+            out.extend(
+                (skipped, None, "skipped (Babylon daily rate limit reached)")
+                for skipped in tokens[i + 1 :]
+            )
+            break
         except Exception as exc:  # noqa: BLE001 — report and continue
             out.append((token, None, repr(exc)))
     if babylon_btc_address:
