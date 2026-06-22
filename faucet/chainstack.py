@@ -24,7 +24,9 @@ SPA automation flow (no API key)::
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 
 import aiohttp
 
@@ -125,8 +127,6 @@ async def _drip_via_api(address: str, chain: str, *, api_key: str) -> str | None
     if not text.strip():
         raise FaucetError(f"Chainstack API error ({resp.status}): empty response body")
     try:
-        import json
-
         data = json.loads(text)
     except ValueError as exc:
         raise FaucetError(
@@ -151,8 +151,6 @@ async def _drip_via_api(address: str, chain: str, *, api_key: str) -> str | None
         # API returns {"url": "https://explorer.../tx/0xabc..."} on success
         tx_url: str = data.get("url", "")
         if tx_url:
-            import re
-
             m = re.search(r"/tx/(0x[0-9a-fA-F]{64})", tx_url)
             if m:
                 return m.group(1)

@@ -31,11 +31,6 @@ Quick start::
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from web3 import AsyncWeb3
-
 from faucet import chainstack as _chainstack
 from faucet.alchemy import (
     CHAINS,
@@ -116,35 +111,6 @@ async def drip(
         )
 
 
-async def is_contract_deployed(w3: "AsyncWeb3", address: str) -> bool:
-    """Return ``True`` if *address* has contract bytecode on the connected chain.
-
-    Args:
-        w3: Connected :class:`~web3.AsyncWeb3` instance.
-        address: Contract address to inspect.
-    """
-    from web3 import AsyncWeb3 as _W3
-
-    code = await w3.eth.get_code(_W3.to_checksum_address(address))
-    return bool(code) and code != b"\x00"
-
-
-async def is_chain_synced(w3: "AsyncWeb3") -> bool:
-    """Return ``True`` if the connected node reports it is fully synced.
-
-    Many L2 RPC providers do not implement ``eth_syncing``; if the method is
-    unavailable the node is assumed to be synced and ``True`` is returned.
-
-    Args:
-        w3: Connected :class:`~web3.AsyncWeb3` instance.
-    """
-    try:
-        syncing = await w3.eth.syncing
-    except Exception:  # noqa: BLE001 — method not supported by this provider
-        return True
-    return not syncing
-
-
 __all__ = [
     "CHAINS",
     "USDC_CHAINS",
@@ -157,7 +123,5 @@ __all__ = [
     "drip",
     "drip_usdc",
     "drip_link_all",
-    "is_contract_deployed",
-    "is_chain_synced",
     "sweep",
 ]

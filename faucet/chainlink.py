@@ -362,8 +362,6 @@ class _Trace:
     def mark(self, phase: str) -> None:
         if not self.on:
             return
-        import sys
-
         now = asyncio.get_event_loop().time()
         print(
             f"[trace] {self.label} {phase} +{now - self.t:.1f}s",

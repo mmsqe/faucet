@@ -12,8 +12,10 @@ API endpoint (from _next/static/chunks/0b_y0tnec2m-9.js):
 from __future__ import annotations
 
 import asyncio
-import os
 import json
+import os
+import random
+
 import aiohttp
 
 # ---------------------------------------------------------------------------
@@ -234,8 +236,6 @@ async def _solve_once(
     timeout: float,
 ) -> str:
     """Single attempt: navigate, fill address, wait for the Turnstile token."""
-    import random
-
     await page.get(page_url)
     await asyncio.sleep(5)  # let the page JS initialise the Turnstile widget
 
@@ -292,9 +292,6 @@ async def _click_turnstile_checkbox(page) -> bool:
     of the hit-box. Center-click misses, so target the left side at a
     fixed offset from the iframe edge.
     """
-    import json
-    import random
-
     import nodriver as uc
 
     doc = await page.send(uc.cdp.dom.get_document(depth=-1, pierce=True))

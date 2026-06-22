@@ -23,7 +23,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "live: marks tests as live integration tests (run with '-m live')",
-    "testnet: marks tests that run against a real testnet and call the faucet (run with '-m testnet')",
 ]
 
 [tool.setuptools.packages.find]

@@ -17,6 +17,9 @@ env/
 .coverage
 htmlcov/
 
+# Runtime logs (e.g. CHAINLINK_TRACE / captured script output)
+*.log
+
 # IDE
 .vscode/
 .idea/
