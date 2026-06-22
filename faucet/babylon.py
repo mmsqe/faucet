@@ -18,7 +18,13 @@ import asyncio
 import json
 import os
 
-from faucet.alchemy import FaucetError, InsufficientFaucetBalanceError, RateLimitError
+from faucet.alchemy import (
+    FaucetError,
+    InsufficientFaucetBalanceError,
+    RateLimitError,
+    _ANTI_FINGERPRINT,
+    _wait_for_turnstile,
+)
 
 _PAGE_URL = "https://tbv-faucet.testnet.babylonlabs.io/"
 _POLL_INTERVAL = 1.0
@@ -174,7 +180,14 @@ async def _drip(
 
     browser = await uc.start(headless=headless, sandbox=not os.environ.get("CI"))
     try:
-        page = await browser.get(_PAGE_URL)
+        # Install the anti-fingerprint on a blank tab *before* navigating, so the
+        # faucet's Turnstile stays invisible instead of escalating to the manual
+        # "Verify you are human" checkbox (which would stall the Drip button).
+        page = await browser.get("about:blank")
+        await page.send(
+            uc.cdp.page.add_script_to_evaluate_on_new_document(source=_ANTI_FINGERPRINT)
+        )
+        await page.get(_PAGE_URL)
         await asyncio.sleep(6)  # React hydration
         await _call_js(page, _INSTALL_INTERCEPTOR)
 
@@ -196,6 +209,10 @@ async def _drip(
             await asyncio.sleep(0.5)
         await _call_js(page, _SET_INPUT, 'input[placeholder="0.00"]', str(amount))
         await asyncio.sleep(1)
+
+        # Solve Turnstile (auto-clicks the checkbox if Cloudflare still escalates)
+        # so the Drip button enables without manual intervention.
+        await _wait_for_turnstile(page, timeout=min(timeout, 45.0))
 
         raw = await _poll(
             lambda: _submit_and_check(page),

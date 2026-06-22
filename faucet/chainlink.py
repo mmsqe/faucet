@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from faucet.alchemy import (
     FaucetError,
     RateLimitError,
-    _click_turnstile_checkbox,
+    _ANTI_FINGERPRINT,
+    _wait_for_turnstile,
 )
 from faucet.rpc import public_rpc
 
@@ -129,7 +130,13 @@ async def drip(
     except ImportError as exc:
         raise FaucetError("nodriver is required: pip install nodriver") from exc
 
-    browser = await uc.start(headless=headless, sandbox=not os.environ.get("CI"))
+    # A flaky Chrome launch must not abort the caller's other faucets — report
+    # the failure per chain instead of raising out of the whole drip.
+    try:
+        browser = await uc.start(headless=headless, sandbox=not os.environ.get("CI"))
+    except Exception as exc:  # noqa: BLE001 — surface as a per-chain error
+        return {chain: (None, f"browser launch failed: {exc!r}") for chain in targets}
+
     results: dict[str, tuple[str | None, str | None]] = {}
     try:
         for i, chain in enumerate(targets):
@@ -304,22 +311,6 @@ def _wallet_shim_source(
         .replace("__CHAIN__", chain_hex)
         .replace("__RPC__", rpc_url)
     )
-
-
-# Cloudflare anti-fingerprint (shared with alchemy.py): force shadow roots open
-# (Turnstile uses a closed one) and hide automation tells.
-_ANTI_FINGERPRINT = (
-    "(() => {"
-    "  const orig = Element.prototype.attachShadow;"
-    "  Element.prototype.attachShadow = function(init) {"
-    "    return orig.call(this, Object.assign({}, init, {mode: 'open'}));"
-    "  };"
-    "  try { Object.defineProperty(navigator, 'webdriver', {get: () => undefined, configurable: true}); } catch (e) {}"
-    "  try { Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en'], configurable: true}); } catch (e) {}"
-    "  try { Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5], configurable: true}); } catch (e) {}"
-    "  try { window.chrome = window.chrome || {runtime: {}}; } catch (e) {}"
-    "})();"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -603,30 +594,6 @@ async def _accept_tos(page) -> bool:
         return False
 
 
-async def _wait_for_turnstile(page, *, timeout: float) -> None:
-    """Wait for the Turnstile token, clicking the checkbox if it escalates. Returns
-    early when no widget is present — the captcha may gate the send, not the load."""
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + timeout
-    grace = loop.time() + 2  # no widget within 2s → assume it isn't up front
-    last_click = 0.0
-    while True:
-        now = loop.time()
-        if await _turnstile_token(page):
-            return
-        present = await _has_turnstile(page)
-        if not present and now > grace:
-            return
-        if now > deadline:
-            if not present:
-                return
-            raise FaucetError(f"Chainlink: Turnstile did not solve within {timeout}s")
-        if present and now - last_click > 5:
-            if await _click_turnstile_checkbox(page):
-                last_click = now
-        await asyncio.sleep(0.5)
-
-
 async def _select_and_submit(page, slug: str) -> None:
     """Drive the multi-asset picker: Clear all (drop the faucet's pre-selected
     assets to drip exactly LINK), select this chain's LINK card (test id
@@ -802,26 +769,6 @@ async def _wait_present(page, candidates: tuple[str, ...], *, timeout: float) ->
         if loop.time() > deadline:
             return False
         await asyncio.sleep(0.7)
-
-
-async def _turnstile_token(page) -> str:
-    try:
-        return await page.evaluate(
-            'document.querySelector("input[name=\'cf-turnstile-response\']")?.value || ""'
-        )
-    except Exception:
-        return ""
-
-
-async def _has_turnstile(page) -> bool:
-    try:
-        return bool(
-            await page.evaluate(
-                "!!document.querySelector(\"input[name='cf-turnstile-response'], .cf-turnstile, iframe[src*='challenges.cloudflare.com']\")"
-            )
-        )
-    except Exception:
-        return False
 
 
 async def _body_text(page) -> str:

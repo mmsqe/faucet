@@ -157,6 +157,24 @@ async def drip(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# Cloudflare anti-fingerprint, injected on new document before any page JS runs.
+# Forces shadow roots open (Turnstile uses a closed one) so the DOM walker can
+# reach the iframe, and hides automation tells so the challenge stays invisible
+# instead of escalating to the interactive "Verify you are human" checkbox.
+# Shared by chainlink.py and babylon.py.
+_ANTI_FINGERPRINT = (
+    "(() => {"
+    "  const orig = Element.prototype.attachShadow;"
+    "  Element.prototype.attachShadow = function(init) {"
+    "    return orig.call(this, Object.assign({}, init, {mode: 'open'}));"
+    "  };"
+    "  try { Object.defineProperty(navigator, 'webdriver', {get: () => undefined, configurable: true}); } catch (e) {}"
+    "  try { Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en'], configurable: true}); } catch (e) {}"
+    "  try { Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5], configurable: true}); } catch (e) {}"
+    "  try { window.chrome = window.chrome || {runtime: {}}; } catch (e) {}"
+    "})();"
+)
+
 
 async def _get_turnstile_token(
     page_url: str,
@@ -181,32 +199,7 @@ async def _get_turnstile_token(
         # mode lets us reach the iframe.
         page = await browser.get("about:blank")
         await page.send(
-            uc.cdp.page.add_script_to_evaluate_on_new_document(
-                source=(
-                    "(() => {"
-                    "  const orig = Element.prototype.attachShadow;"
-                    "  Element.prototype.attachShadow = function(init) {"
-                    "    return orig.call(this, Object.assign({}, init, {mode: 'open'}));"
-                    "  };"
-                    # Hide common automation fingerprints Turnstile probes for.
-                    "  try {"
-                    "    Object.defineProperty(navigator, 'webdriver', "
-                    "      {get: () => undefined, configurable: true});"
-                    "  } catch (e) {}"
-                    "  try {"
-                    "    Object.defineProperty(navigator, 'languages', "
-                    "      {get: () => ['en-US', 'en'], configurable: true});"
-                    "  } catch (e) {}"
-                    "  try {"
-                    "    Object.defineProperty(navigator, 'plugins', "
-                    "      {get: () => [1, 2, 3, 4, 5], configurable: true});"
-                    "  } catch (e) {}"
-                    "  try {"
-                    "    window.chrome = window.chrome || {runtime: {}};"
-                    "  } catch (e) {}"
-                    "})();"
-                )
-            )
+            uc.cdp.page.add_script_to_evaluate_on_new_document(source=_ANTI_FINGERPRINT)
         )
 
         # Split timeout across two attempts — first round of the managed
@@ -422,3 +415,50 @@ def _find_turnstile_iframe(node):
                 return found
 
     return None
+
+
+async def _turnstile_token(page) -> str:
+    """The current Turnstile response token, or "" if not yet solved."""
+    try:
+        return await page.evaluate(
+            'document.querySelector("input[name=\'cf-turnstile-response\']")?.value || ""'
+        )
+    except Exception:
+        return ""
+
+
+async def _has_turnstile(page) -> bool:
+    """Whether a Turnstile widget (input, container, or iframe) is on the page."""
+    try:
+        return bool(
+            await page.evaluate(
+                "!!document.querySelector(\"input[name='cf-turnstile-response'], .cf-turnstile, iframe[src*='challenges.cloudflare.com']\")"
+            )
+        )
+    except Exception:
+        return False
+
+
+async def _wait_for_turnstile(page, *, timeout: float) -> None:
+    """Wait for the Turnstile token, clicking the checkbox if it escalates. Returns
+    early when no widget is present — the captcha may gate the send, not the load.
+    Shared by chainlink.py and babylon.py."""
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    grace = loop.time() + 2  # no widget within 2s → assume it isn't up front
+    last_click = 0.0
+    while True:
+        now = loop.time()
+        if await _turnstile_token(page):
+            return
+        present = await _has_turnstile(page)
+        if not present and now > grace:
+            return
+        if now > deadline:
+            if not present:
+                return
+            raise FaucetError(f"Turnstile did not solve within {timeout}s")
+        if present and now - last_click > 5:
+            if await _click_turnstile_checkbox(page):
+                last_click = now
+        await asyncio.sleep(0.5)
