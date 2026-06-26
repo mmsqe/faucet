@@ -1,6 +1,7 @@
 """Drip native tokens and USDC on all supported testnet chains."""
 
 import asyncio
+import contextlib
 import gc
 import logging
 import os
@@ -257,10 +258,21 @@ async def _sweep() -> None:
 
 
 loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 try:
     loop.run_until_complete(main())
     loop.run_until_complete(_sweep())
     gc.collect()
     loop.run_until_complete(asyncio.sleep(0.25))
 finally:
+    pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        with contextlib.suppress(Exception):
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+    with contextlib.suppress(Exception):
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    with contextlib.suppress(Exception):
+        loop.run_until_complete(loop.shutdown_default_executor())
     loop.close()
