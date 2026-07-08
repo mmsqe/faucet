@@ -14,6 +14,10 @@ LINK (:func:`drip_link_all`)
     chains in one browser.  Wallet-connect only, so it injects a wallet for the
     target address; claiming requires a signature, so a private key is needed.
 
+Tempo TIP-20 stablecoins (:func:`drip_tempo`)
+    Tempo testnet faucet via the ``tempo_fundAddress`` JSON-RPC method.  No
+    captcha or wallet — a single call mints pathUSD/AlphaUSD/BetaUSD/ThetaUSD.
+
 Quick start::
 
     import asyncio
@@ -46,6 +50,9 @@ from faucet.circle import CHAINS as USDC_CHAINS
 from faucet.circle import USDC_CONTRACTS
 from faucet.circle import drip as drip_usdc
 from faucet.sweep import sweep
+from faucet.tempo import CHAINS as TEMPO_CHAINS
+from faucet.tempo import TOKENS as TEMPO_TOKENS
+from faucet.tempo import drip as drip_tempo
 
 # ---------------------------------------------------------------------------
 # Chainstack fallback — maps Alchemy chain slug → Chainstack chain slug
@@ -117,11 +124,14 @@ __all__ = [
     "USDC_CONTRACTS",
     "LINK_CHAINS",
     "LINK_CONTRACTS",
+    "TEMPO_CHAINS",
+    "TEMPO_TOKENS",
     "FaucetError",
     "InsufficientFaucetBalanceError",
     "RateLimitError",
     "drip",
     "drip_usdc",
     "drip_link_all",
+    "drip_tempo",
     "sweep",
 ]

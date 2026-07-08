@@ -17,7 +17,9 @@ from faucet import (
     RateLimitError,
     drip,
     drip_usdc,
+    tempo,
 )
+import asyncio
 
 
 @pytest.mark.live
@@ -41,7 +43,6 @@ class TestFaucetConfig:
         assert issubclass(InsufficientFaucetBalanceError, FaucetError)
 
     def test_drip_raises_on_unknown_chain(self):
-        import asyncio
 
         with pytest.raises(ValueError, match="Unknown chain"):
             asyncio.run(
@@ -69,7 +70,6 @@ class TestFaucetConfig:
             assert chain in USDC_CHAINS, f"{chain!r} missing from USDC_CHAINS"
 
     def test_drip_usdc_raises_on_unknown_chain(self):
-        import asyncio
 
         with pytest.raises(ValueError, match="unknown chain"):
             asyncio.run(
@@ -77,7 +77,6 @@ class TestFaucetConfig:
             )
 
     def test_drip_usdc_raises_on_unknown_token(self):
-        import asyncio
 
         with pytest.raises(ValueError, match="unsupported token"):
             asyncio.run(
@@ -85,5 +84,21 @@ class TestFaucetConfig:
                     "0x0000000000000000000000000000000000000001",
                     "base-sepolia",
                     token="DAI",
+                )
+            )
+
+
+@pytest.mark.live
+class TestTempoConfig:
+    def test_chain(self):
+        assert tempo.CHAINS == {"tempo-moderato", "tempo-testnet"}
+        assert tempo.CHAIN_ID == 42431
+        assert set(tempo.TOKENS) == {"pathUSD", "AlphaUSD", "BetaUSD", "ThetaUSD"}
+        # StdTokens.sol addresses: 0x20c0…0000 through …0003.
+        assert tempo.TOKENS["pathUSD"].lower().startswith("0x20c00000")
+        with pytest.raises(ValueError, match="unknown chain"):
+            asyncio.run(
+                tempo.drip(
+                    "0x0000000000000000000000000000000000000001", "unknown-chain"
                 )
             )

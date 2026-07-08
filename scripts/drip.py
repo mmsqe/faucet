@@ -22,6 +22,7 @@ from faucet import aave as _aave
 from faucet import babylon as _babylon
 from faucet import chainstack as _chainstack
 from faucet import compound as _compound
+from faucet import tempo as _tempo
 from faucet.nonce import NonceManager
 from faucet.rpc import SEPOLIA_RPC_URL
 from faucet.sweep import sweep
@@ -118,6 +119,17 @@ async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
     return out
 
 
+async def _drip_tempo() -> tuple[str | None, list[str], str | None]:
+    """Drip Tempo testnet stablecoins via the ``tempo_fundAddress`` RPC.
+
+    One call mints all four TIP-20 tokens; returns ``(chain, tx_hashes, err)``."""
+    chain = "tempo-moderato"
+    try:
+        return chain, await _tempo.drip(address, chain), None
+    except Exception as exc:  # noqa: BLE001 — report and continue
+        return chain, [], repr(exc)
+
+
 async def _emit(coro, render) -> None:
     """Await *coro*, then print ``render(result)`` as a single block the moment
     it resolves — so a fast branch reports without waiting on the slow ones.
@@ -158,6 +170,17 @@ def _render_tokens(title: str, result: dict) -> str:
     return "\n".join(lines)
 
 
+def _render_tempo(result) -> str:
+    chain, tx_hashes, err = result
+    if err:
+        return f"Tempo TIP-20 (pathUSD/Alpha/Beta/ThetaUSD):\n  {chain}: ERROR — {err}"
+    lines = ["Tempo TIP-20 (pathUSD/Alpha/Beta/ThetaUSD):"]
+    lines.append(f"  {chain}: {len(tx_hashes)} tokens funded")
+    for tx in tx_hashes:
+        lines.append(f"    tx={tx}")
+    return "\n".join(lines)
+
+
 def _render_babylon(rows) -> str:
     if not rows:
         return ""
@@ -175,6 +198,7 @@ async def main() -> None:
     do_compound = True
     do_bb = not os.environ.get("CI")
     do_link = not os.environ.get("CI")
+    do_tempo = True
     parts = []
     if do_native:
         parts.append(f"{len(_ALL_NATIVE_CHAINS)} native chains")
@@ -189,6 +213,8 @@ async def main() -> None:
     if do_bb:
         bb_count = len(_babylon.EVM_TOKENS) + (1 if babylon_btc_address else 0)
         parts.append(f"{bb_count} Babylon TBV assets")
+    if do_tempo:
+        parts.append(f"{len(_tempo.TOKENS)} Tempo stablecoins")
     print(f"Funding {address} on {', '.join(parts)}\n")
 
     # Each branch prints its own section the moment it finishes (see _emit), so
@@ -233,6 +259,8 @@ async def main() -> None:
         )
     if do_bb:
         tasks.append(_emit(_drip_babylon(), _render_babylon))
+    if do_tempo:
+        tasks.append(_emit(_drip_tempo(), _render_tempo))
 
     await asyncio.gather(*tasks)
 

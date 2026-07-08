@@ -11,12 +11,13 @@ Uses `nodriver` (undetectable Chrome) to solve Cloudflare Turnstile / reCAPTCHA 
 | Native ETH / HYPE | Alchemy + Chainstack | 21 chains — see `faucet.CHAINS` |
 | USDC / EURC | Circle | 9 EVM chains + Solana Devnet — see `faucet.USDC_CHAINS` |
 | GHO, DAI, USDC, USDT, WBTC, WETH, LINK, AAVE | Aave V3 | Ethereum Sepolia |
+| pathUSD, AlphaUSD, BetaUSD, ThetaUSD | Tempo (`tempo_fundAddress` RPC) | Tempo testnet (Moderato) — see `faucet.TEMPO_CHAINS` |
 
 ## Quick start
 
 ```python
 import asyncio
-from faucet import drip, drip_usdc, sweep
+from faucet import drip, drip_usdc, drip_tempo, sweep
 from faucet import aave
 
 # Native ETH drip
@@ -27,6 +28,9 @@ asyncio.run(drip_usdc("0xYourAddress", "base-sepolia"))
 
 # Aave testnet tokens (requires private key for gas)
 asyncio.run(aave.drip("0xYourAddress", "0xPrivateKey", "GHO"))
+
+# Tempo testnet stablecoins (no captcha/wallet — one RPC call mints all four)
+asyncio.run(drip_tempo("0xYourAddress"))
 
 # Sweep all testnet ETH + USDC from a wallet to another address
 asyncio.run(sweep("0xPrivateKey", "0xDestinationAddress"))
@@ -62,6 +66,7 @@ TESTNET_PRIVATE_KEY=0x... TESTNET_ADDRESS=0x... uv run python scripts/sweep.py
 | `CHAINSTACK_API_KEY` | Enables the fast REST path for Chainstack chains |
 | `INFURA_KEY` | Infura project key — used for Sepolia RPC endpoints |
 | `HL_TESTNET_RPC_URL` | Override Hyperliquid testnet RPC |
+| `TEMPO_RPC_URL` | Override the Tempo testnet RPC endpoint |
 
 ## Fallback behaviour
 
