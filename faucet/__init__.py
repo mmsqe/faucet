@@ -16,7 +16,7 @@ LINK (:func:`drip_link_all`)
 
 Tempo TIP-20 stablecoins (:func:`drip_tempo`)
     Tempo testnet faucet via the ``tempo_fundAddress`` JSON-RPC method.  No
-    captcha or wallet — a single call mints pathUSD/AlphaUSD/BetaUSD/ThetaUSD.
+    captcha or wallet — a single call mints every token in ``TEMPO_TOKENS``.
 
 Quick start::
 

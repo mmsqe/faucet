@@ -120,9 +120,7 @@ async def _drip_babylon() -> list[tuple[str, str | None, str | None]]:
 
 
 async def _drip_tempo() -> tuple[str | None, list[str], str | None]:
-    """Drip Tempo testnet stablecoins via the ``tempo_fundAddress`` RPC.
-
-    One call mints all four TIP-20 tokens; returns ``(chain, tx_hashes, err)``."""
+    """Drip Tempo stablecoins; returns ``(chain, tx_hashes, err)``."""
     chain = "tempo-moderato"
     try:
         return chain, await _tempo.drip(address, chain), None
@@ -173,8 +171,8 @@ def _render_tokens(title: str, result: dict) -> str:
 def _render_tempo(result) -> str:
     chain, tx_hashes, err = result
     if err:
-        return f"Tempo TIP-20 (pathUSD/Alpha/Beta/ThetaUSD):\n  {chain}: ERROR — {err}"
-    lines = ["Tempo TIP-20 (pathUSD/Alpha/Beta/ThetaUSD):"]
+        return f"Tempo TIP-20:\n  {chain}: ERROR — {err}"
+    lines = ["Tempo TIP-20:"]
     lines.append(f"  {chain}: {len(tx_hashes)} tokens funded")
     for tx in tx_hashes:
         lines.append(f"    tx={tx}")

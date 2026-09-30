@@ -1,4 +1,4 @@
-"""Unit-style tests for the faucet package (no network calls).
+"""Tests for the faucet package.
 
 Run with::
 
@@ -8,6 +8,8 @@ Run with::
 from __future__ import annotations
 
 import pytest
+from eth_account import Account
+from web3 import AsyncHTTPProvider, AsyncWeb3
 
 from faucet import (
     CHAINS,
@@ -93,7 +95,6 @@ class TestTempoConfig:
     def test_chain(self):
         assert tempo.CHAINS == {"tempo-moderato", "tempo-testnet"}
         assert tempo.CHAIN_ID == 42431
-        assert set(tempo.TOKENS) == {"pathUSD", "AlphaUSD", "BetaUSD", "ThetaUSD"}
         # StdTokens.sol addresses: 0x20c0…0000 through …0003.
         assert tempo.TOKENS["pathUSD"].lower().startswith("0x20c00000")
         with pytest.raises(ValueError, match="unknown chain"):
@@ -102,3 +103,16 @@ class TestTempoConfig:
                     "0x0000000000000000000000000000000000000001", "unknown-chain"
                 )
             )
+
+    async def test_drip_mints_exactly_tokens(self):
+        """Calls the public faucet: its successful mints are exactly TOKENS."""
+        hashes = await tempo.drip(Account.create().address)
+        w3 = AsyncWeb3(
+            AsyncHTTPProvider(
+                tempo._rpc_url("tempo-moderato"),
+                request_kwargs={"headers": tempo._HEADERS},
+            )
+        )
+        receipts = [await w3.eth.wait_for_transaction_receipt(h) for h in hashes]
+        minted = {r["to"] for r in receipts if r["status"] == 1}
+        assert minted == set(tempo.TOKENS.values())

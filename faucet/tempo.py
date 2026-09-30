@@ -2,8 +2,7 @@
 Tempo testnet faucet — the ``tempo_fundAddress`` JSON-RPC method.
 
 A first-party faucet exposed by the public testnet node: no captcha, wallet, or
-signature. One POST mints all four testnet TIP-20 stablecoins (pathUSD,
-AlphaUSD, BetaUSD, ThetaUSD) and returns one transaction hash per token.
+signature. One POST mints every token in :data:`TOKENS`.
 
 The node is behind Cloudflare, which 403s a default User-Agent — so requests
 send a browser one (see :data:`_HEADERS`).
@@ -40,6 +39,7 @@ TOKENS: dict[str, str] = {
     "AlphaUSD": "0x20C0000000000000000000000000000000000001",
     "BetaUSD": "0x20C0000000000000000000000000000000000002",
     "ThetaUSD": "0x20C0000000000000000000000000000000000003",
+    "OpenUSD": "0x20c0000000000000000000006a37DA5C996874BE",
 }
 
 _HEADERS = {
@@ -69,8 +69,7 @@ async def drip(
     *,
     rpc_url: str | None = None,
 ) -> list[str]:
-    """Fund *address* with all four Tempo testnet stablecoins via
-    ``tempo_fundAddress``; returns one transaction hash per token.
+    """Mint every token in :data:`TOKENS` to *address*; returns one transaction hash each.
 
     *chain* must be a key in :data:`CHAINS`. *rpc_url* overrides the endpoint
     (default: ``TEMPO_RPC_URL`` env var, else the built-in URL for *chain*).

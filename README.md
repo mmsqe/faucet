@@ -11,7 +11,7 @@ Uses `nodriver` (undetectable Chrome) to solve Cloudflare Turnstile / reCAPTCHA 
 | Native ETH / HYPE | Alchemy + Chainstack | 21 chains — see `faucet.CHAINS` |
 | USDC / EURC | Circle | 9 EVM chains + Solana Devnet — see `faucet.USDC_CHAINS` |
 | GHO, DAI, USDC, USDT, WBTC, WETH, LINK, AAVE | Aave V3 | Ethereum Sepolia |
-| pathUSD, AlphaUSD, BetaUSD, ThetaUSD | Tempo (`tempo_fundAddress` RPC) | Tempo testnet (Moderato) — see `faucet.TEMPO_CHAINS` |
+| pathUSD, AlphaUSD, BetaUSD, ThetaUSD, OpenUSD | Tempo (`tempo_fundAddress` RPC) | Tempo testnet (Moderato) — see `faucet.TEMPO_CHAINS` |
 
 ## Quick start
 
@@ -29,7 +29,7 @@ asyncio.run(drip_usdc("0xYourAddress", "base-sepolia"))
 # Aave testnet tokens (requires private key for gas)
 asyncio.run(aave.drip("0xYourAddress", "0xPrivateKey", "GHO"))
 
-# Tempo testnet stablecoins (no captcha/wallet — one RPC call mints all four)
+# Tempo testnet stablecoins (no captcha/wallet — one RPC call mints them all)
 asyncio.run(drip_tempo("0xYourAddress"))
 
 # Sweep all testnet ETH + USDC from a wallet to another address
