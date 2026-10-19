@@ -54,8 +54,8 @@ USDC_CONTRACTS: dict[str, str] = {
     "optimism-sepolia": "0x5fd84259d66Cd46123540766Be93DFE6D43130D7",
     "polygon-amoy": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
     "avalanche-fuji": "0x5425890298aed601595a70AB815c96711a31Bc65",
-    "linea-sepolia": "0x176211869cA2b568f2A7D4EE941E073a821EE1ff",
-    "zksync-sepolia": "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4",
+    "linea-sepolia": "0xFEce4462D57bD51A6A552365A011b95f0E16d9B7",
+    "zksync-sepolia": "0xAe045DE5638162fa134807Cb558E15A3F5A7F853",
     "unichain-sepolia": "0x31d0220469e10c4E71834a79b1f276d740d3768F",
 }
 

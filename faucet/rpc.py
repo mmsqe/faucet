@@ -79,6 +79,12 @@ MONAD_TESTNET_RPC_URL = _rpc(
 ABSTRACT_TESTNET_RPC_URL = _rpc(
     None, "ABSTRACT_TESTNET_RPC_URL", "https://api.testnet.abs.xyz"
 )
+LINEA_SEPOLIA_RPC_URL = _rpc(
+    None, "LINEA_SEPOLIA_RPC_URL", "https://rpc.sepolia.linea.build"
+)
+UNICHAIN_SEPOLIA_RPC_URL = _rpc(
+    None, "UNICHAIN_SEPOLIA_RPC_URL", "https://sepolia.unichain.org"
+)
 
 #: All EVM testnets: chain slug → (rpc_url, inject_poa_middleware, native_token_symbol)
 #: PoA middleware is needed when eth_getBlock returns extraData > 32 bytes
@@ -91,6 +97,8 @@ EVM_CHAINS: dict[str, tuple[str, bool, str]] = {
     "arbitrum-sepolia": (ARBITRUM_SEPOLIA_RPC_URL, False, "ETH"),
     "polygon-amoy": (POLYGON_AMOY_RPC_URL, True, "POL"),
     "avalanche-fuji": (AVALANCHE_FUJI_RPC_URL, True, "AVAX"),
+    "linea-sepolia": (LINEA_SEPOLIA_RPC_URL, False, "ETH"),
+    "unichain-sepolia": (UNICHAIN_SEPOLIA_RPC_URL, False, "ETH"),
     "hyperliquid-testnet": (HL_TESTNET_RPC_URL, False, "HYPE"),
     "humanity-testnet": (HUMANITY_TESTNET_RPC_URL, True, "tHP"),
     "soneium-minato": (SONEIUM_MINATO_RPC_URL, False, "ETH"),
