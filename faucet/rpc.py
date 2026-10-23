@@ -38,7 +38,7 @@ ARBITRUM_SEPOLIA_RPC_URL = _rpc(
     None, "ARBITRUM_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc"
 )
 POLYGON_AMOY_RPC_URL = _rpc(
-    None, "POLYGON_AMOY_RPC_URL", "https://rpc-amoy.polygon.technology"
+    None, "POLYGON_AMOY_RPC_URL", "https://polygon-amoy-bor-rpc.publicnode.com"
 )
 AVALANCHE_FUJI_RPC_URL = _rpc(
     None, "AVALANCHE_FUJI_RPC_URL", "https://avalanche-fuji-c-chain-rpc.publicnode.com"
@@ -55,7 +55,7 @@ SONEIUM_MINATO_RPC_URL = _rpc(
     None, "SONEIUM_MINATO_RPC_URL", "https://rpc.minato.soneium.org"
 )
 LENS_SEPOLIA_RPC_URL = _rpc(
-    None, "LENS_SEPOLIA_RPC_URL", "https://rpc.testnet.lens.dev"
+    None, "LENS_SEPOLIA_RPC_URL", "https://rpc.testnet.lens.xyz"
 )
 SHAPE_SEPOLIA_RPC_URL = _rpc(
     None, "SHAPE_SEPOLIA_RPC_URL", "https://sepolia.shape.network"
@@ -64,9 +64,6 @@ WORLDCHAIN_SEPOLIA_RPC_URL = _rpc(
     None,
     "WORLDCHAIN_SEPOLIA_RPC_URL",
     "https://worldchain-sepolia.g.alchemy.com/public",
-)
-CROSSFI_TESTNET_RPC_URL = _rpc(
-    None, "CROSSFI_TESTNET_RPC_URL", "https://rpc.testnet.ms"
 )
 GENSYN_TESTNET_RPC_URL = _rpc(
     None,
@@ -105,12 +102,12 @@ EVM_CHAINS: dict[str, tuple[str, bool, str]] = {
     "lens-sepolia": (LENS_SEPOLIA_RPC_URL, False, "GRASS"),
     "shape-sepolia": (SHAPE_SEPOLIA_RPC_URL, False, "ETH"),
     "worldchain-sepolia": (WORLDCHAIN_SEPOLIA_RPC_URL, False, "ETH"),
-    "crossfi-testnet": (CROSSFI_TESTNET_RPC_URL, True, "XFI"),
     "gensyn-testnet": (GENSYN_TESTNET_RPC_URL, False, "ETH"),
     "monad-testnet": (MONAD_TESTNET_RPC_URL, False, "MON"),
     "abstract-testnet": (ABSTRACT_TESTNET_RPC_URL, False, "ETH"),
-    # Note: stable-testnet, syndicate-risa, worldl3-devnet are dripped via
-    # Alchemy but have no public no-auth RPC. Add them here once an Alchemy
+    # Note: stable-testnet, syndicate-risa, worldl3-devnet, crossfi-testnet
+    # are dripped via Alchemy but have no working public no-auth RPC
+    # (rpc.testnet.ms went dead in 2026-10). Add them here once an Alchemy
     # API key is wired up (https://<slug>.g.alchemy.com/v2/<key>).
     # Note: zksync-era-sepolia is the same on-chain as zksync-sepolia (just a
     # second faucet path via Chainstack); existing zksync-sepolia entry sweeps
@@ -122,7 +119,7 @@ EVM_CHAINS: dict[str, tuple[str, bool, str]] = {
 #: third-party Chainlink faucet page by its wallet shim, where a credential must
 #: not leak. Pins a keyless endpoint for chains that would otherwise resolve to
 #: an Infura URL (ethereum/base/optimism-sepolia) or a flakier official one
-#: (arbitrum, polygon). Chains absent here (e.g. avalanche-fuji) fall through to
+#: (arbitrum). Chains absent here (e.g. avalanche-fuji) fall through to
 #: the already-keyless :data:`EVM_CHAINS` value. ``slug -> (env_var, fallback)``.
 _KEYLESS_RPC: dict[str, tuple[str, str]] = {
     "ethereum-sepolia": (
@@ -137,10 +134,6 @@ _KEYLESS_RPC: dict[str, tuple[str, str]] = {
     "optimism-sepolia": (
         "OP_SEPOLIA_RPC_URL",
         "https://optimism-sepolia-rpc.publicnode.com",
-    ),
-    "polygon-amoy": (
-        "POLYGON_AMOY_RPC_URL",
-        "https://polygon-amoy-bor-rpc.publicnode.com",
     ),
 }
 
