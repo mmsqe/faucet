@@ -28,9 +28,11 @@ from dataclasses import dataclass
 
 from typing import cast
 
+from aiohttp import ClientError
 from eth_typing import ChecksumAddress
 from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
+from web3.providers.rpc.utils import ExceptionRetryConfiguration
 from web3.types import TxParams
 
 from faucet.aave import _DECIMALS as _AAVE_DECIMALS
@@ -44,14 +46,19 @@ _ERC20_GAS_LIMIT = 100_000
 # USDC sweep cycles of native gas to reserve. CI runs daily and skips the
 # native drip; local runs refill native ~monthly.
 _USDC_SWEEP_CYCLES = 30
-# Ethereum Sepolia does the most work per chain (native + USDC + Compound
-# sweeps), so give the per-chain watchdog more headroom.
-_CHAIN_TIMEOUT = 120.0
+# Per-chain watchdog, 120s by default. Ethereum Sepolia sends native plus ~10
+# token sweeps, each awaiting a ~12s block, which overran 120s.
+_CHAIN_TIMEOUT: dict[str, float] = {"ethereum-sepolia": 300.0}
 # Sepolia gas swung from ~73k wei (2026-10-21) to 38 wei (10-23), so reserves
 # priced at the current gas price can strand the next day's Aave/Compound
 # drips. Never sweep native below this floor.
 _NATIVE_FLOOR: dict[str, int] = {"ethereum-sepolia": AsyncWeb3.to_wei(0.01, "ether")}
 _RPC_REQUEST_TIMEOUT = 10
+# Sepolia, OP, Base and zkSync share one Infura key, which 429s on bursts;
+# web3's default retry gives up after ~2s of backoff, this one after ~7.5s.
+_RPC_RETRY = ExceptionRetryConfiguration(
+    errors=(ClientError, TimeoutError), backoff_factor=0.5
+)
 
 # On Ethereum Sepolia, leave gas behind for both the post-mint Aave sweep
 # (this cycle: one ERC-20 transfer per token) AND the next Aave faucet run
@@ -143,6 +150,17 @@ async def _gas_reserve(w3: AsyncWeb3, gas_limit: int, multiplier: int) -> int:
     return _effective_gas_price(gas_params) * gas_limit * multiplier
 
 
+async def _send(w3: AsyncWeb3, account, tx) -> tuple[str, str]:
+    """Sign, broadcast and await *tx*; return ``(tx_hash, "ok" | "FAILED")``."""
+    signed = account.sign_transaction(tx)
+    tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+    # 2s, not web3's 0.1s default (10 req/s per pending tx): see _RPC_RETRY.
+    receipt = await w3.eth.wait_for_transaction_receipt(
+        tx_hash, timeout=60, poll_latency=2
+    )
+    return tx_hash.hex(), "ok" if receipt["status"] == 1 else "FAILED"
+
+
 async def _op_stack_l1_fee(
     w3: AsyncWeb3,
     account,
@@ -187,7 +205,9 @@ async def _sweep_chain(
 ) -> list[SweepResult]:
 
     provider = AsyncWeb3.AsyncHTTPProvider(
-        rpc_url, request_kwargs={"timeout": _RPC_REQUEST_TIMEOUT}
+        rpc_url,
+        request_kwargs={"timeout": _RPC_REQUEST_TIMEOUT},
+        exception_retry_configuration=_RPC_RETRY,
     )
     w3 = AsyncWeb3(provider)
     if poa:
@@ -266,19 +286,14 @@ async def _sweep_chain(
                     "chainId": chain_id,
                     **gas_params,
                 }
-                signed = account.sign_transaction(tx)
-                tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
-                receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-                status = "ok" if receipt["status"] == 1 else "FAILED"
+                tx_hash, status = await _send(w3, account, tx)
                 balance_after = await w3.eth.get_balance(sender)
                 print(
-                    f"  [{chain}] {symbol} sent {value / 10**18:.6f} → {checksum_to}  tx={tx_hash.hex()}  {status}"
+                    f"  [{chain}] {symbol} sent {value / 10**18:.6f} → {checksum_to}  tx={tx_hash}  {status}"
                 )
                 print(f"  [{chain}] {symbol} after:  {balance_after / 10**18:.6f}")
                 results.append(
-                    SweepResult(
-                        chain=chain, token=symbol, tx_hash=tx_hash.hex(), value=value
-                    )
+                    SweepResult(chain=chain, token=symbol, tx_hash=tx_hash, value=value)
                 )
 
         # ── USDC ────────────────────────────────────────────────────────────
@@ -408,21 +423,18 @@ async def _sweep_tokens(
                 },
             )
         )
-        signed = account.sign_transaction(tx)
-        tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-        status = "ok" if receipt["status"] == 1 else "FAILED"
+        tx_hash, status = await _send(w3, account, tx)
         balance_after = await token.functions.balanceOf(sender).call()
         print(
             f"  [{chain}] {symbol} sent {balance / 10**dec:.6f} → {checksum_to}"
-            f"  tx={tx_hash.hex()}  {status}"
+            f"  tx={tx_hash}  {status}"
         )
         print(f"  [{chain}] {symbol} after:  {balance_after / 10**dec:.6f}")
         results.append(
             SweepResult(
                 chain=chain,
                 token=symbol,
-                tx_hash=tx_hash.hex(),
+                tx_hash=tx_hash,
                 value=balance,
                 decimals=dec,
             )
@@ -452,13 +464,14 @@ async def sweep(
 
     async def _run(chain: str) -> list[SweepResult]:
         rpc_url, poa, symbol = EVM_CHAINS[chain]
+        timeout = _CHAIN_TIMEOUT.get(chain, 120.0)
         try:
             return await asyncio.wait_for(
                 _sweep_chain(chain, rpc_url, poa, symbol, private_key, to_address),
-                timeout=_CHAIN_TIMEOUT,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
-            print(f"  [{chain}] timed out after {_CHAIN_TIMEOUT:.0f}s, skip")
+            print(f"  [{chain}] timed out after {timeout:.0f}s, skip")
         except Exception as exc:
             print(f"  [{chain}] error: {exc}")
         return []
