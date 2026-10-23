@@ -47,6 +47,10 @@ _USDC_SWEEP_CYCLES = 30
 # Ethereum Sepolia does the most work per chain (native + USDC + Compound
 # sweeps), so give the per-chain watchdog more headroom.
 _CHAIN_TIMEOUT = 120.0
+# Sepolia gas swung from ~73k wei (2026-10-21) to 38 wei (10-23), so reserves
+# priced at the current gas price can strand the next day's Aave/Compound
+# drips. Never sweep native below this floor.
+_NATIVE_FLOOR: dict[str, int] = {"ethereum-sepolia": AsyncWeb3.to_wei(0.01, "ether")}
 _RPC_REQUEST_TIMEOUT = 10
 
 # On Ethereum Sepolia, leave gas behind for both the post-mint Aave sweep
@@ -237,15 +241,21 @@ async def _sweep_chain(
                 w3, account, checksum_to, balance_before, chain_id, gas_params
             )
 
-            total_reserve = (
+            total_reserve = max(
                 native_gas_cost
                 + usdc_reserve
                 + aave_reserve
                 + compound_reserve
-                + l1_fee_reserve
+                + l1_fee_reserve,
+                _NATIVE_FLOOR.get(chain, 0),
             )
             if balance_before <= total_reserve:
-                print(f"  [{chain}] {symbol} skip: balance below gas cost")
+                # Steady state when no native drip ran since the last sweep:
+                # that sweep left exactly the reserve, minus its own gas.
+                print(
+                    f"  [{chain}] {symbol} skip: balance within gas reserve "
+                    f"({balance_before / 10**18:.8f} <= {total_reserve / 10**18:.8f})"
+                )
             else:
                 value = balance_before - total_reserve
                 nonce = await w3.eth.get_transaction_count(sender)
@@ -373,8 +383,12 @@ async def _sweep_tokens(
             continue
 
         native_now = await w3.eth.get_balance(sender)
-        gas_params = await _build_tx_params(w3, _ERC20_GAS_LIMIT)
-        gas_cost = _effective_gas_price(gas_params) * _ERC20_GAS_LIMIT * 2
+        transfer = token.functions.transfer(checksum_to, balance)
+        # Estimate rather than use _ERC20_GAS_LIMIT: on zkSync pubdata pushes a
+        # USDC transfer to ~175k gas, so a fixed 100k limit runs out of gas.
+        gas_limit = await transfer.estimate_gas({"from": sender}) * 6 // 5
+        gas_params = await _build_tx_params(w3, gas_limit)
+        gas_cost = _effective_gas_price(gas_params) * gas_limit * 2
         if native_now < gas_cost:
             print(
                 f"  [{chain}] {symbol} skip: insufficient {native_symbol} for gas "
@@ -383,9 +397,7 @@ async def _sweep_tokens(
             continue
 
         nonce = await w3.eth.get_transaction_count(sender)
-        tx: TxParams = await token.functions.transfer(
-            checksum_to, balance
-        ).build_transaction(
+        tx: TxParams = await transfer.build_transaction(
             cast(
                 TxParams,
                 {
